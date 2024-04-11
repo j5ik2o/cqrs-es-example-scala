@@ -31,11 +31,59 @@ lazy val baseSettings = Seq(
   ),
   resolvers ++= Resolver.sonatypeOssRepos("staging"),
   resolvers ++= Resolver.sonatypeOssRepos("releases"),
+  libraryDependencies ++= Seq(
+    "org.scalatest" %% "scalatest" % "3.2.17" % Test
+  ),
   semanticdbEnabled := true
 )
+
+lazy val `command-domain` = (project in file("modules/command/domain"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-domain",
+    libraryDependencies ++= Seq(
+      "org.wvlet.airframe" %% "airframe-ulid" % "24.4.0",
+      "com.github.j5ik2o" %% "event-store-adapter-scala" % "1.0.142",
+    )
+  )
+
+lazy val `command-interface-adaptor-if` = (project in file("modules/command/interface-adaptor-if"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-command-interface-adaptor-if"
+  )
+  .dependsOn(`command-domain`)
+
+lazy val `command-interface-adaptor-impl` = (project in file("modules/command/interface-adaptor-impl"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-command-interface-adaptor-impl"
+  )
+  .dependsOn(`command-domain`, `command-interface-adaptor-if`)
+
+lazy val `command-use-case` = (project in file("modules/command/use-case"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-command-use-case"
+  )
+  .dependsOn(`command-domain`, `command-interface-adaptor-if`)
+
+lazy val `query-interface-adaptor` = (project in file("modules/query/interface-adaptor"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-query-interface-adaptor"
+  )
+
+lazy val `bootstrap` = (project in file("modules/bootstrap"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-bootstrap"
+  )
+  .dependsOn(`command-domain`, `command-interface-adaptor-impl`, `command-use-case`, `query-interface-adaptor`)
 
 lazy val root = (project in file("."))
   .settings(baseSettings)
   .settings(
     name := "cqrs-es-example-scala"
   )
+  .aggregate(`command-domain`,`command-interface-adaptor-impl`, `command-use-case`, `query-interface-adaptor`, `bootstrap`)
