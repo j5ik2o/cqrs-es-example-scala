@@ -1,6 +1,7 @@
 package com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat
 
 enum GroupChatError {
+  case VersionConflictError(id: GroupChatId, expectedVersion: Long, actualVersion: Long)
   case AlreadyDeletedError(id: GroupChatId)
   case AlreadyExistsNameError(id: GroupChatId)
   case AlreadyExistsMemberError(id: GroupChatId)

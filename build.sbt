@@ -1,6 +1,6 @@
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
-ThisBuild / scalaVersion := "3.3.3"
+ThisBuild / scalaVersion := "3.4.0"
 
 lazy val baseSettings = Seq(
   organization := "com.github.j5ik2o",
@@ -25,8 +25,6 @@ lazy val baseSettings = Seq(
     "-feature",
     "-unchecked",
     "-Xlint",
-    "-Xsource:3.3.3",
-    "-Yexplicit-nulls",
     "-Ykind-projector"
   ),
   resolvers ++= Resolver.sonatypeOssRepos("staging"),
@@ -42,8 +40,8 @@ lazy val `command-domain` = (project in file("modules/command/domain"))
   .settings(
     name := "cqrs-es-example-scala-domain",
     libraryDependencies ++= Seq(
-      "org.wvlet.airframe" %% "airframe-ulid" % "24.4.0",
-      "com.github.j5ik2o" %% "event-store-adapter-scala" % "1.0.142",
+      "org.wvlet.airframe" %% "airframe-ulid"             % "24.4.0",
+      "com.github.j5ik2o"  %% "event-store-adapter-scala" % "1.0.142"
     )
   )
 
@@ -86,4 +84,14 @@ lazy val root = (project in file("."))
   .settings(
     name := "cqrs-es-example-scala"
   )
-  .aggregate(`command-domain`,`command-interface-adaptor-impl`, `command-use-case`, `query-interface-adaptor`, `bootstrap`)
+  .aggregate(
+    `command-domain`,
+    `command-interface-adaptor-impl`,
+    `command-use-case`,
+    `query-interface-adaptor`,
+    `bootstrap`
+  )
+
+// --- Custom commands
+addCommandAlias("lint", ";scalafmtCheck;test:scalafmtCheck;scalafmtSbtCheck;scalafixAll --check")
+addCommandAlias("fmt", ";scalafixAll;scalafmtAll;scalafmtSbt;scalafixAll")

@@ -4,5 +4,5 @@ import wvlet.airframe.ulid.ULID
 
 final case class MemberId(private val value: ULID) {
   def asString: String = value.toString
-  def toULID: ULID = value
+  def toULID: ULID     = value
 }
