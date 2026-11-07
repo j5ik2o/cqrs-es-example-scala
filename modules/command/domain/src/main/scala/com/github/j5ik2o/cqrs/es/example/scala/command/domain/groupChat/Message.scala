@@ -2,6 +2,10 @@ package com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat
 
 import com.github.j5ik2o.cqrs.es.example.scala.command.domain.userAccount.UserAccountId
 
-import java.time.Instant
+final case class Message(id: MessageId, body: MessageBody, senderId: UserAccountId)
 
-final case class Message(id: MessageId, body: MessageBody, senderId: UserAccountId, createdAt: Instant)
+object Message {
+
+  def newMessage(body: MessageBody, senderId: UserAccountId): Message =
+    Message(MessageId.newId, body, senderId)
+}

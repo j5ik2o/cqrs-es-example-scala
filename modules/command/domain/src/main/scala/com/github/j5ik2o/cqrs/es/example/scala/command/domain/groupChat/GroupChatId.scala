@@ -1,17 +1,20 @@
 package com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat
 
-import com.github.j5ik2o.event.store.adapter.java.AggregateId
-import wvlet.airframe.ulid.ULID
+import com.github.j5ik2o.cqrs.es.example.scala.command.domain.UlidSupport
 
 object GroupChatId {
+
   final val Prefix: String = "GroupChat"
-  def newId: GroupChatId   = GroupChatId(ULID.newULID)
+
+  def newId: GroupChatId = GroupChatId(UlidSupport.newUlid())
+
+  def fromString(value: String): Either[String, GroupChatId] =
+    UlidSupport.parse(value, Prefix).map(GroupChatId.apply)
+
+  def fromValue(value: String): Either[String, GroupChatId] =
+    UlidSupport.parse(value, Prefix).map(GroupChatId.apply)
 }
 
-final case class GroupChatId(private val value: ULID) extends AggregateId {
-  def asString: String = s"${GroupChatId.Prefix}-${value.toString}"
-  def toULID: ULID     = value
-
-  override def getTypeName: String = GroupChatId.Prefix
-  override def getValue: String    = value.toString
+final case class GroupChatId(value: String) {
+  def asString: String = s"${GroupChatId.Prefix}-$value"
 }

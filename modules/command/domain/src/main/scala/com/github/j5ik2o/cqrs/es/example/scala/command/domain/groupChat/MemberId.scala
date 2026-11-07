@@ -1,8 +1,15 @@
 package com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat
 
-import wvlet.airframe.ulid.ULID
+import com.github.j5ik2o.cqrs.es.example.scala.command.domain.UlidSupport
 
-final case class MemberId(private val value: ULID) {
-  def asString: String = value.toString
-  def toULID: ULID     = value
+object MemberId {
+
+  def newId: MemberId = MemberId(UlidSupport.newUlid())
+
+  def fromString(value: String): Either[String, MemberId] =
+    UlidSupport.parse(value, "Member").map(MemberId.apply)
+}
+
+final case class MemberId(value: String) {
+  def asString: String = value
 }

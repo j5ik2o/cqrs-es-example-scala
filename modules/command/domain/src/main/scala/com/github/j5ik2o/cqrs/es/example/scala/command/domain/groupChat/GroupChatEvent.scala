@@ -1,59 +1,65 @@
 package com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat
 
 import com.github.j5ik2o.cqrs.es.example.scala.command.domain.userAccount.UserAccountId
-import com.github.j5ik2o.event.store.adapter.java.Event
-import wvlet.airframe.ulid.ULID
 
-import java.time.Instant
+/** The payload of a domain event. Envelope metadata (aggregate id, seq_nr, occurred_at and manifest) is not part of the
+  * payload. The manifest is derived from `eventType` and `schemaVersion`.
+  */
+sealed trait GroupChatEvent {
 
-sealed trait GroupChatEvent extends Event[GroupChatId] {
-  def id: ULID
-  def aggregateId: GroupChatId
-  def sequenceNumber: Long
-  def occurredAt: Instant
+  def eventType: String
 
-  override def getId: String               = id.toString
-  override def getAggregateId: GroupChatId = aggregateId
-  override def getSequenceNumber: Long     = sequenceNumber
-  override def getOccurredAt: Instant      = occurredAt
-  override def isCreated: Boolean          = false
+  def schemaVersion: Int = GroupChatEvent.SchemaVersion
+
+  final def manifest: String = s"$eventType@$schemaVersion"
 }
 
 object GroupChatEvent {
-  final case class Created(id: ULID, aggregateId: GroupChatId, sequenceNumber: Long, name: String, occurredAt: Instant)
-      extends GroupChatEvent {
-    override def isCreated: Boolean = true
+
+  final val SchemaVersion: Int = 1
+
+  final val CreatedType        = "group-chat-created"
+  final val DeletedType        = "group-chat-deleted"
+  final val RenamedType        = "group-chat-renamed"
+  final val MemberAddedType    = "group-chat-member-added"
+  final val MemberRemovedType  = "group-chat-member-removed"
+  final val MessagePostedType  = "group-chat-message-posted"
+  final val MessageEditedType  = "group-chat-message-edited"
+  final val MessageDeletedType = "group-chat-message-deleted"
+
+  final case class Created(name: GroupChatName, owner: Member, executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = CreatedType
   }
-  final case class Deleted(id: ULID, aggregateId: GroupChatId, sequenceNumber: Long, occurredAt: Instant)
-      extends GroupChatEvent
-  final case class Renamed(id: ULID, aggregateId: GroupChatId, sequenceNumber: Long, name: String, occurredAt: Instant)
-      extends GroupChatEvent
-  final case class MemberAdded(
-      id: ULID,
-      aggregateId: GroupChatId,
-      sequenceNumber: Long,
-      member: Member,
-      occurredAt: Instant
-  ) extends GroupChatEvent
-  final case class MemberRemoved(
-      id: ULID,
-      aggregateId: GroupChatId,
-      sequenceNumber: Long,
-      userAccountId: UserAccountId,
-      occurredAt: Instant
-  ) extends GroupChatEvent
-  final case class MessagePosted(
-      id: ULID,
-      aggregateId: GroupChatId,
-      sequenceNumber: Long,
-      message: Message,
-      occurredAt: Instant
-  ) extends GroupChatEvent
-  final case class MessageDeleted(
-      id: ULID,
-      aggregateId: GroupChatId,
-      sequenceNumber: Long,
+
+  final case class Deleted(executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = DeletedType
+  }
+
+  final case class Renamed(name: GroupChatName, executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = RenamedType
+  }
+
+  final case class MemberAdded(member: Member, executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = MemberAddedType
+  }
+
+  final case class MemberRemoved(userAccountId: UserAccountId, executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = MemberRemovedType
+  }
+
+  final case class MessagePosted(message: Message, executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = MessagePostedType
+  }
+
+  final case class MessageEdited(
       messageId: MessageId,
-      occurredAt: Instant
-  ) extends GroupChatEvent
+      body: MessageBody,
+      executorId: UserAccountId
+  ) extends GroupChatEvent {
+    override val eventType: String = MessageEditedType
+  }
+
+  final case class MessageDeleted(messageId: MessageId, executorId: UserAccountId) extends GroupChatEvent {
+    override val eventType: String = MessageDeletedType
+  }
 }
