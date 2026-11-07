@@ -6,11 +6,11 @@ final case class ReadApiConfig(host: String, port: Int, readModel: ReadModelData
 
 object ReadApiConfig {
 
-  final val DefaultHost        = "0.0.0.0"
-  final val DefaultPort        = 48082
-  final val DefaultDatabaseUrl = "jdbc:mysql://localhost:3306/cqrs_es_example?useSSL=false&allowPublicKeyRetrieval=true"
-  final val DefaultDatabaseUser     = "root"
-  final val DefaultDatabasePassword = "password"
+  final val DefaultHost             = "0.0.0.0"
+  final val DefaultPort             = 48082
+  final val DefaultDatabaseUrl      = ReadModelDatabaseConfig.DefaultUrl
+  final val DefaultDatabaseUser     = ReadModelDatabaseConfig.DefaultUser
+  final val DefaultDatabasePassword = ReadModelDatabaseConfig.DefaultPassword
 
   def fromEnv(env: String => Option[String] = sys.env.get): Either[String, ReadApiConfig] =
     for {
@@ -25,13 +25,7 @@ object ReadApiConfig {
   private[bootstrap] def parseReadModel(
       env: String => Option[String]
   ): Either[String, ReadModelDatabaseConfig] =
-    Right(
-      ReadModelDatabaseConfig(
-        url = env("READ_MODEL_DATABASE_URL").getOrElse(DefaultDatabaseUrl),
-        user = env("READ_MODEL_DATABASE_USER").getOrElse(DefaultDatabaseUser),
-        password = env("READ_MODEL_DATABASE_PASSWORD").getOrElse(DefaultDatabasePassword)
-      )
-    )
+    Right(ReadModelDatabaseConfig.fromEnv(env))
 
   private[bootstrap] def parsePort(value: String): Either[String, Int] =
     value.toIntOption.filter(port => port > 0 && port <= 65535).toRight(s"invalid port: $value")

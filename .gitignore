@@ -25,6 +25,7 @@ node_modules/
 dump.rdb
 
 .DS_Store
+deploy/parameters.json
 .credentials
 .gpgCredentials
 dumps/

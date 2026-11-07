@@ -15,6 +15,7 @@ import com.github.j5ik2o.cqrs.es.example.scala.rmu.ReadModelUpdater
 import com.github.j5ik2o.cqrs.es.example.scala.rmu.RecoveryService
 import com.github.j5ik2o.cqrs.es.example.scala.rmu.Resyncer
 import com.github.j5ik2o.cqrs.es.example.scala.rmu.RetryPolicy
+import com.github.j5ik2o.cqrs.es.example.scala.rmu.RmuConfig
 import com.github.j5ik2o.cqrs.es.example.scala.rmu.RunnerSettings
 import org.slf4j.LoggerFactory
 import software.amazon.awssdk.regions.Region

@@ -17,6 +17,20 @@ import scala.util.Using
 
 final case class ReadModelDatabaseConfig(url: String, user: String, password: String)
 
+object ReadModelDatabaseConfig {
+
+  final val DefaultUrl      = "jdbc:mysql://localhost:3306/cqrs_es_example?useSSL=false&allowPublicKeyRetrieval=true"
+  final val DefaultUser     = "root"
+  final val DefaultPassword = "password"
+
+  def fromEnv(env: String => Option[String]): ReadModelDatabaseConfig =
+    ReadModelDatabaseConfig(
+      url = env("READ_MODEL_DATABASE_URL").getOrElse(DefaultUrl),
+      user = env("READ_MODEL_DATABASE_USER").getOrElse(DefaultUser),
+      password = env("READ_MODEL_DATABASE_PASSWORD").getOrElse(DefaultPassword)
+    )
+}
+
 object JdbcReadModelDao {
 
   private lazy val driverLoaded: Boolean =

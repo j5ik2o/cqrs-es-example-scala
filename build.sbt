@@ -1,17 +1,19 @@
 ThisBuild / version := "0.1.0-SNAPSHOT"
 ThisBuild / scalaVersion := "3.6.4"
 
-val esaVersion       = "5.1.0"
-val circeVersion     = "0.14.17"
-val calibanVersion   = "3.2.1"
-val http4sVersion    = "0.23.38"
-val zioVersion       = "2.1.27"
-val awsSdkVersion    = "2.57.4"
-val ulidVersion      = "5.2.4"
-val scalaTestVersion = "3.2.20"
-val logbackVersion   = "1.6.6"
-val mysqlVersion     = "9.5.0"
-val slf4jVersion     = "2.0.17"
+val esaVersion          = "5.1.0"
+val circeVersion        = "0.14.17"
+val calibanVersion      = "3.2.1"
+val http4sVersion       = "0.23.38"
+val zioVersion          = "2.1.27"
+val awsSdkVersion       = "2.57.4"
+val lambdaCoreVersion   = "1.4.1"
+val lambdaEventsVersion = "3.16.1"
+val ulidVersion         = "5.2.4"
+val scalaTestVersion    = "3.2.20"
+val logbackVersion      = "1.6.6"
+val mysqlVersion        = "9.5.0"
+val slf4jVersion        = "2.0.17"
 
 lazy val baseSettings = Seq(
   organization := "com.github.j5ik2o",
@@ -105,6 +107,9 @@ lazy val `rmu` = (project in file("modules/rmu"))
     libraryDependencies ++= Seq(
       "io.github.j5ik2o"      %% "event-store-adapter-scala" % esaVersion,
       "software.amazon.awssdk" % "dynamodb"                  % awsSdkVersion,
+      "software.amazon.awssdk" % "sqs"                       % awsSdkVersion,
+      "io.circe"              %% "circe-core"                % circeVersion,
+      "io.circe"              %% "circe-parser"              % circeVersion,
       "org.slf4j"              % "slf4j-api"                 % slf4jVersion
     )
   )
@@ -149,6 +154,31 @@ lazy val `bootstrap` = (project in file("modules/bootstrap"))
     `rmu`
   )
 
+lazy val `lambda` = (project in file("modules/lambda"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-lambda",
+    assembly / assemblyJarName := "cqrs-es-example-scala-lambda.jar",
+    assembly / mainClass := None,
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "services", _*) => MergeStrategy.concat
+      case PathList("META-INF", "MANIFEST.MF")  => MergeStrategy.discard
+      case PathList("META-INF", _*)             => MergeStrategy.discard
+      case "module-info.class"                  => MergeStrategy.discard
+      case "reference.conf"                     => MergeStrategy.concat
+      case "application.conf"                   => MergeStrategy.concat
+      case _                                    => MergeStrategy.first
+    },
+    libraryDependencies ++= Seq(
+      "software.amazon.awssdk" % "sqs"                    % awsSdkVersion,
+      "com.amazonaws"          % "aws-lambda-java-core"   % lambdaCoreVersion,
+      "com.amazonaws"          % "aws-lambda-java-events" % lambdaEventsVersion,
+      "io.circe"              %% "circe-parser"           % circeVersion,
+      "ch.qos.logback"         % "logback-classic"        % logbackVersion
+    )
+  )
+  .dependsOn(`rmu`)
+
 lazy val root = (project in file("."))
   .settings(baseSettings)
   .settings(
@@ -161,6 +191,7 @@ lazy val root = (project in file("."))
     `command-interface-adaptor-impl`,
     `query-interface-adaptor`,
     `rmu`,
+    `lambda`,
     `bootstrap`
   )
 
