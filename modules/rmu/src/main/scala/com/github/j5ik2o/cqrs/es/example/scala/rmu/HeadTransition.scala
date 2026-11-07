@@ -18,3 +18,6 @@ final case class HeadTransition(
     seqNr: Long,
     events: Vector[HeadEventRecord]
 )
+
+/** The identifiers that can be read from a head image even when its event payload cannot be decoded. */
+final case class HeadRecordIdentity(aggregateId: String, seqNr: Long)

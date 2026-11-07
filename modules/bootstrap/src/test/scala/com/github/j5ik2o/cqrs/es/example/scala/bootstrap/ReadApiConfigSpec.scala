@@ -49,16 +49,28 @@ class ReadApiConfigSpec extends AnyFreeSpec with Matchers {
       config.dynamoDb.journalTableName shouldBe "cqrs-es-example-journal"
       config.dynamoDb.endpointUrl shouldBe None
       config.maxItemCount shouldBe 100
-      config.pollIntervalMillis shouldBe 1000L
+      config.retryMaxAttempts shouldBe 5
+      config.retryMaxElapsedMillis shouldBe 30000L
+      config.pollBackoffInitialMillis shouldBe 500L
+      config.pollBackoffMaxMillis shouldBe 30000L
+      config.recoveryIntervalMillis shouldBe 60000L
+      config.recoveryMaxTasksPerRun shouldBe 50
+      config.streamRetentionHours shouldBe 24L
     }
 
     "reads the stream settings from the environment" in {
       val env = Map(
-        "HEAD_TABLE_NAME"             -> "test-head",
-        "AWS_REGION"                  -> "us-east-1",
-        "AWS_DYNAMODB_ENDPOINT_URL"   -> "http://localhost:4566",
-        "STREAM_MAX_ITEM_COUNT"       -> "25",
-        "STREAM_POLL_INTERVAL_MILLIS" -> "250"
+        "HEAD_TABLE_NAME"                    -> "test-head",
+        "AWS_REGION"                         -> "us-east-1",
+        "AWS_DYNAMODB_ENDPOINT_URL"          -> "http://localhost:4566",
+        "STREAM_MAX_ITEM_COUNT"              -> "25",
+        "STREAM_RETRY_MAX_ATTEMPTS"          -> "7",
+        "STREAM_RETRY_MAX_ELAPSED_MILLIS"    -> "15000",
+        "STREAM_POLL_BACKOFF_INITIAL_MILLIS" -> "250",
+        "STREAM_POLL_BACKOFF_MAX_MILLIS"     -> "4000",
+        "STREAM_RECOVERY_INTERVAL_MILLIS"    -> "120000",
+        "STREAM_RECOVERY_MAX_TASKS_PER_RUN"  -> "10",
+        "STREAM_RETENTION_HOURS"             -> "48"
       )
 
       val config = RmuConfig.fromEnv(env.get).toOption.get
@@ -67,7 +79,13 @@ class ReadApiConfigSpec extends AnyFreeSpec with Matchers {
       config.dynamoDb.region shouldBe "us-east-1"
       config.dynamoDb.endpointUrl shouldBe Some("http://localhost:4566")
       config.maxItemCount shouldBe 25
-      config.pollIntervalMillis shouldBe 250L
+      config.retryMaxAttempts shouldBe 7
+      config.retryMaxElapsedMillis shouldBe 15000L
+      config.pollBackoffInitialMillis shouldBe 250L
+      config.pollBackoffMaxMillis shouldBe 4000L
+      config.recoveryIntervalMillis shouldBe 120000L
+      config.recoveryMaxTasksPerRun shouldBe 10
+      config.streamRetentionHours shouldBe 48L
     }
 
     "rejects a non-positive max item count" in {

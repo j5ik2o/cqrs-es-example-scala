@@ -14,11 +14,14 @@ LocalStack and MySQL.
   by `userAccountId`.
 - Read Model Updater that subscribes to the `head` table's DynamoDB Streams, deduplicates by
   `(aggregate_id, seq_nr)`, fills sequence gaps from the journal and records positions in `read_model_positions`.
+- Read Model Updater recovery: bounded retries with exponential backoff and full jitter, durable recovery tasks in
+  `read_model_recovery_tasks` replayed from the journal, and DY-15 resynchronisation. See
+  [`docs/RMU_RECOVERY.ja.md`](docs/RMU_RECOVERY.ja.md).
 - DynamoDB wiring for the `journal`, `snapshot` and `head` tables, including the snapshot GSI and the three
   `__config__` items that the event store validates at startup.
 - MySQL schema and migrations for the read model.
 - Unit tests for the domain, the command processor, the JSON serializers, the event store repository, the GraphQL
-  APIs, the head stream decoder and the read model updater.
+  APIs, the head stream decoder, the read model updater and its recovery paths.
 
 ## Module layout
 
@@ -29,7 +32,7 @@ LocalStack and MySQL.
 | `modules/command/processor` | Command processing, optimistic locking through the event store, snapshot policy |
 | `modules/command/interface-adaptor-impl` | Event store repository, JSON serializers, event store factory and Write API |
 | `modules/query/interface-adaptor` | MySQL read model and GraphQL Read API |
-| `modules/rmu` | Head stream decoder, journal gap reader, read model projection and stream runner |
+| `modules/rmu` | Head stream decoder, journal reader, read model applier, retry policy, recovery tasks and the resync/poll loop |
 | `modules/bootstrap` | Write API, Read API and Read Model Updater servers, plus environment configuration |
 
 ## Requirements
@@ -115,6 +118,7 @@ in `tools/migrate/migrations` and run in numeric order:
 | `1_create_group_chats.up.sql` | `group_chats` |
 | `2_create_members.up.sql` | `members` |
 | `3_create_messages.up.sql` | `messages` |
+| `4_create_read_model_recovery_tasks.up.sql` | `read_model_recovery_tasks` |
 
 ```sh
 for migration in tools/migrate/migrations/*.up.sql; do
@@ -125,6 +129,8 @@ done
 
 `read_model_positions` stores the last applied `seq_nr` per aggregate. Every projection and the position update run in
 one transaction, so a duplicate delivery is a no-op and a sequence gap fails instead of silently skipping.
+`read_model_recovery_tasks` stores events that could not be applied. The event body is re-read from the journal when
+the task is replayed.
 
 ### Read model environment variables
 
@@ -139,14 +145,23 @@ one transaction, so a duplicate delivery is a no-op and a sequence gap fails ins
 The Read Model Updater subscribes to the `head` table's DynamoDB Streams, not the journal. Each head transition
 carries the `seq_nr` and the event envelopes appended by that write. The updater:
 
-- skips the reserved `__config__` item;
+- skips the reserved `__config__` item and heads of other aggregate types;
 - deserializes the event payloads and applies them to the read model in ascending `seq_nr`;
 - discards duplicates by `(aggregate_id, seq_nr)`;
-- fills a sequence gap from the journal through `getEventsByIdSinceSeqNr` before applying the received event;
-- records the processed position in `read_model_positions`.
+- fills a sequence gap from the journal before applying the received event;
+- records the processed position in `read_model_positions`;
+- retries a retryable failure with an attempt limit, a wall-clock limit and full-jitter exponential backoff;
+- records a permanent failure, or a retry that exhausted its budget, in `read_model_recovery_tasks` and replays it
+  from the journal later.
 
 Shard iterators start at `TRIM_HORIZON` when a shard is first seen. Replaying a record after a restart is safe because
-the position table discards it.
+the position table discards it. An expired iterator resumes after the last processed sequence number. A trimmed stream
+runs a full resync, and so does a reader that has been idle longer than the 24 hour stream retention. The startup scan
+reads every head with strong consistency and fills the lag from the journal before polling starts.
+
+The recovery table is written by identifiers only. Recovery reads the position first, replays the journal in ascending
+order with the normal position guard, confirms the target position, and only then marks the task complete. A recovery
+run handles a bounded number of tasks, and a failed task moves behind tasks that have not been attempted yet.
 
 ### Read Model Updater environment variables
 
@@ -159,7 +174,15 @@ the position table discards it.
 | `AWS_REGION` | `ap-northeast-1` |
 | `AWS_DYNAMODB_ENDPOINT_URL` / `AWS_ENDPOINT_URL` | unset |
 | `STREAM_MAX_ITEM_COUNT` | `100` |
-| `STREAM_POLL_INTERVAL_MILLIS` | `1000` |
+| `STREAM_RETRY_MAX_ATTEMPTS` | `5` |
+| `STREAM_RETRY_MAX_ELAPSED_MILLIS` | `30000` |
+| `STREAM_RETRY_INITIAL_DELAY_MILLIS` | `200` |
+| `STREAM_RETRY_MAX_DELAY_MILLIS` | `5000` |
+| `STREAM_POLL_BACKOFF_INITIAL_MILLIS` | `500` |
+| `STREAM_POLL_BACKOFF_MAX_MILLIS` | `30000` |
+| `STREAM_RECOVERY_INTERVAL_MILLIS` | `60000` |
+| `STREAM_RECOVERY_MAX_TASKS_PER_RUN` | `50` |
+| `STREAM_RETENTION_HOURS` | `24` |
 | `READ_MODEL_DATABASE_URL` | see above |
 | `READ_MODEL_DATABASE_USER` | `root` |
 | `READ_MODEL_DATABASE_PASSWORD` | `password` |

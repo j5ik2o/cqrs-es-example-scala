@@ -11,6 +11,12 @@ import scala.util.Try
 trait JournalEventReader {
 
   def eventsSince(aggregateId: String, seqNr: Long): Try[Vector[HeadEventRecord]]
+
+  /** Reads the events of the inclusive range. Recovery applies a gap in bounded chunks. */
+  def eventsBetween(aggregateId: String, fromSeqNr: Long, toSeqNr: Long): Try[Vector[HeadEventRecord]] =
+    eventsSince(aggregateId, fromSeqNr).map(
+      _.filter(record => record.seqNr >= fromSeqNr && record.seqNr <= toSeqNr).sortBy(_.seqNr)
+    )
 }
 
 object AggregateIdCodec {

@@ -59,7 +59,7 @@ class ReadModelUpdaterSpec extends AnyFreeSpec with Matchers {
   }
 
   private def run(updater: ReadModelUpdater, transitionValue: HeadTransition): Try[Unit] =
-    updater.applyTransition(transitionValue)
+    updater.applyTransition(transitionValue).map(_ => ())
 
   "the read model updater" - {
     "projects a created event" in {

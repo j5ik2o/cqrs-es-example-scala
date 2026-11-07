@@ -44,7 +44,8 @@ services:
     environment:
       <<: [*dynamodb, *read-model]
       STREAM_MAX_ITEM_COUNT: 32
-      STREAM_POLL_INTERVAL_MILLIS: 500
+      STREAM_POLL_BACKOFF_INITIAL_MILLIS: 500
+      STREAM_POLL_BACKOFF_MAX_MILLIS: 5000
     depends_on:
       localstack:
         condition: service_healthy

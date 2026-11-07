@@ -108,6 +108,41 @@ class HeadStreamDecoderSpec extends AnyFreeSpec with Matchers {
       HeadStreamDecoder.decode(record(OperationType.REMOVE), GroupChatSerializers.eventSerializer) shouldBe None
     }
 
+    "skips a head of another aggregate type" in {
+      HeadStreamDecoder.decode(
+        record(OperationType.INSERT, aid = "UserAccount-01ARZ3NDEKTSV4RRFFQ69G5FAV"),
+        GroupChatSerializers.eventSerializer
+      ) shouldBe None
+    }
+
+    "reads the fallback identity when the events are missing" in {
+      val image = Map(
+        "aid"    -> string(groupChatId),
+        "seq_nr" -> number(4L)
+      ).asJava
+      val record = Record
+        .builder()
+        .eventName(OperationType.INSERT)
+        .dynamodb(StreamRecord.builder().newImage(image).build())
+        .build()
+
+      HeadStreamDecoder.fallbackIdentity(record) shouldBe Some(HeadRecordIdentity(groupChatId, 4L))
+    }
+
+    "does not read a fallback identity for the configuration item" in {
+      val image = Map(
+        "aid"    -> string(HeadStreamDecoder.ConfigAid),
+        "seq_nr" -> number(0L)
+      ).asJava
+      val record = Record
+        .builder()
+        .eventName(OperationType.INSERT)
+        .dynamodb(StreamRecord.builder().newImage(image).build())
+        .build()
+
+      HeadStreamDecoder.fallbackIdentity(record) shouldBe None
+    }
+
     "rejects a record without the events list" in {
       val image = Map("aid" -> string(groupChatId), "seq_nr" -> number(1L)).asJava
       val record = Record
