@@ -10,6 +10,8 @@ val awsSdkVersion    = "2.57.4"
 val ulidVersion      = "5.2.4"
 val scalaTestVersion = "3.2.20"
 val logbackVersion   = "1.6.6"
+val mysqlVersion     = "9.5.0"
+val slf4jVersion     = "2.0.17"
 
 lazy val baseSettings = Seq(
   organization := "com.github.j5ik2o",
@@ -87,18 +89,26 @@ lazy val `command-interface-adaptor-impl` = (project in file("modules/command/in
 lazy val `query-interface-adaptor` = (project in file("modules/query/interface-adaptor"))
   .settings(baseSettings)
   .settings(
-    name := "cqrs-es-example-scala-query-interface-adaptor"
+    name := "cqrs-es-example-scala-query-interface-adaptor",
+    libraryDependencies ++= Seq(
+      "com.github.ghostdogpr" %% "caliban"           % calibanVersion,
+      "dev.zio"               %% "zio"               % zioVersion,
+      "com.mysql"              % "mysql-connector-j" % mysqlVersion
+    )
   )
+  .dependsOn(`command-domain`)
 
 lazy val `rmu` = (project in file("modules/rmu"))
   .settings(baseSettings)
   .settings(
     name := "cqrs-es-example-scala-rmu",
     libraryDependencies ++= Seq(
-      "io.github.j5ik2o" %% "event-store-adapter-scala" % esaVersion
+      "io.github.j5ik2o"      %% "event-store-adapter-scala" % esaVersion,
+      "software.amazon.awssdk" % "dynamodb"                  % awsSdkVersion,
+      "org.slf4j"              % "slf4j-api"                 % slf4jVersion
     )
   )
-  .dependsOn(`command-domain`, `command-interface-adaptor-impl`)
+  .dependsOn(`command-domain`, `command-interface-adaptor-impl`, `query-interface-adaptor`)
 
 lazy val `bootstrap` = (project in file("modules/bootstrap"))
   .settings(baseSettings)
@@ -117,7 +127,14 @@ lazy val `bootstrap` = (project in file("modules/bootstrap"))
       "ch.qos.logback"         % "logback-classic"       % logbackVersion
     )
   )
-  .dependsOn(`command-domain`, `command-interface-adaptor-if`, `command-interface-adaptor-impl`, `command-processor`)
+  .dependsOn(
+    `command-domain`,
+    `command-interface-adaptor-if`,
+    `command-interface-adaptor-impl`,
+    `command-processor`,
+    `query-interface-adaptor`,
+    `rmu`
+  )
 
 lazy val root = (project in file("."))
   .settings(baseSettings)
