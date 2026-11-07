@@ -313,6 +313,7 @@ response and exits non-zero.
 | `read-api-server-1` | 48082 | Read API GraphQL at `/graphql` |
 | `localstack` | 24566 | DynamoDB and DynamoDB Streams |
 | `mysql` | 23306 | read model |
+| `fault-e2e` | none (one-shot) | RMU fault-injection e2e |
 
 The `dynamodb-setup` service creates the three tables from the ESA v5 storage profile:
 
@@ -330,6 +331,56 @@ validates the CloudFormation template and builds the Lambda package. The `e2e` j
 `tools/scripts/docker-compose-e2e-test.sh` against the built images and LocalStack. The `main` branch requires all four
 checks.
 
+### Fault-injection e2e
+
+After the happy-path script passes, `docker-compose-e2e-test.sh` stops the long-running `read-model-updater-1` service
+and runs the one-shot `fault-e2e` service. That process runs the production `LocalRmuRunner`, `Resyncer`,
+`ReadModelUpdater` and `RecoveryService` against the real LocalStack tables and the real MySQL read model. It owns the
+only reader of the head stream, so the injected failure lands in the scenario that asked for it.
+
+| Scenario | Injection | Asserted outcome |
+|:--|:--|:--|
+| Update during the startup scan | A rename is written from the head scan while the poller is running | The scan starts after the subscription resumes; the update reaches the read model; a later head record with a journal gap is filled from the journal |
+| Trimmed stream | `TrimmedDataAccessException` is returned once and the stream records are hidden until the scan runs | A full resync runs, the scan fills the lag from the journal, and polling continues afterwards |
+| Expired iterator | `ExpiredIteratorException` is returned once after records were processed | The poller asks for an `AFTER_SEQUENCE_NUMBER` iterator and no full resync runs; later updates still arrive |
+| Retry exhaustion | The projection of one `seq_nr` fails with a retryable error until retries are exhausted | A durable row appears in `read_model_recovery_tasks`; replaying it from the journal advances the position and marks it completed |
+| Position guard | Duplicate and older deliveries, a head ahead of the journal, and a foreign-key violation | Only `position + 1` is applied; a duplicate changes nothing; a gap fails without advancing; a failed projection rolls the position back |
+
+Every wait is a poll with a deadline. A timeout prints the description and the last observed position or counter, and the
+process exits non-zero. The five scenarios are:
+
+```text
+RUN: startup scan with an update during the scan
+PASS: startup scan with an update during the scan
+RUN: trimmed stream triggers a full resync
+PASS: trimmed stream triggers a full resync
+RUN: expired iterator resumes the shard
+PASS: expired iterator resumes the shard
+RUN: retry exhaustion parks and recovers a task
+PASS: retry exhaustion parks and recovers a task
+RUN: position guard rejects duplicates and gaps
+PASS: position guard rejects duplicates and gaps
+PASS: RMU fault-injection e2e (5 scenarios)
+```
+
+Run it on its own against an already running stack (the updater must be stopped first):
+
+```sh
+docker compose -p cqrs-es-example-scala \
+  -f tools/docker-compose/docker-compose-databases.yml \
+  -f tools/docker-compose/docker-compose-applications.yml \
+  -f tools/docker-compose/docker-compose-e2e-test.yml \
+  stop -t 10 read-model-updater-1
+docker compose -p cqrs-es-example-scala \
+  -f tools/docker-compose/docker-compose-databases.yml \
+  -f tools/docker-compose/docker-compose-applications.yml \
+  -f tools/docker-compose/docker-compose-e2e-test.yml \
+  run --rm --no-deps -T fault-e2e
+```
+
+`FAULT_E2E_SCENARIO_TIMEOUT_SECONDS` (default 120) and `FAULT_E2E_POLL_INTERVAL_MILLIS` (default 200) bound every
+wait. The runner also reads the normal RMU and read model environment variables.
+
 ## Remaining design decisions
 
 The following are not implemented and are reported in the Pull Request as design questions:
@@ -338,5 +389,5 @@ The following are not implemented and are reported in the Pull Request as design
   from Secrets Manager or SSM Parameter Store.
 - The CloudWatch alarm thresholds, the recovery worker concurrency and the per-run task budget have not been tuned
   against a production workload.
-- The fault-injection coverage is at the handler and unit level. There is no LocalStack e2e that runs the Lambda and
-  SQS resources end to end.
+- The local RMU has a fault-injection e2e (see above). There is still no LocalStack e2e that runs the deployed Lambda,
+  DynamoDB Streams event source mapping and SQS recovery resources end to end.

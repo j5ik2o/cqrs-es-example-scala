@@ -36,6 +36,13 @@ fi
 status=0
 compose_full run --rm --build --no-deps e2e-test && status=0 || status=$?
 
+if [ "${status}" -eq 0 ]; then
+  # The fault-injection e2e runs its own read model updater. The long-running service must stop first, otherwise the
+  # two readers race for the same head stream and the injected failures land in the wrong process.
+  compose_full stop -t 10 read-model-updater-1 >/dev/null 2>&1 || true
+  compose_full run --rm --no-deps -T fault-e2e && status=0 || status=$?
+fi
+
 if [ "${status}" -ne 0 ]; then
   echo "e2e failed with status ${status}; dumping compose logs" >&2
   compose_full logs --no-color || true

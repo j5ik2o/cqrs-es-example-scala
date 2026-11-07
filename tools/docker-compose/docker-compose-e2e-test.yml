@@ -13,3 +13,33 @@ services:
         condition: service_started
       read-api-server-1:
         condition: service_started
+
+  # One-shot fault-injection e2e. The script stops read-model-updater-1 first, because this process runs its own
+  # updater and the two readers would race for the same head stream.
+  fault-e2e:
+    image: cqrs-es-example-scala:e2e
+    entrypoint: ["java", "-cp", "/app/cqrs-es-example-scala-fault-e2e.jar"]
+    command: ["com.github.j5ik2o.cqrs.es.example.scala.fault.FaultE2eMain"]
+    environment:
+      AWS_REGION: ap-northeast-1
+      AWS_ACCESS_KEY_ID: x
+      AWS_SECRET_ACCESS_KEY: x
+      AWS_DYNAMODB_ENDPOINT_URL: http://localstack:4566
+      JOURNAL_TABLE_NAME: cqrs-es-example-journal
+      SNAPSHOT_TABLE_NAME: cqrs-es-example-snapshot
+      HEAD_TABLE_NAME: cqrs-es-example-head
+      SNAPSHOT_ACTIVE_HISTORY_INDEX_NAME: snapshot-active-history-index
+      READ_MODEL_DATABASE_URL: jdbc:mysql://mysql-local:3306/cqrs_es_example?useSSL=false&allowPublicKeyRetrieval=true
+      READ_MODEL_DATABASE_USER: ceer
+      READ_MODEL_DATABASE_PASSWORD: ceer
+      FAULT_E2E_SCENARIO_TIMEOUT_SECONDS: "120"
+      FAULT_E2E_POLL_INTERVAL_MILLIS: "200"
+    depends_on:
+      localstack:
+        condition: service_healthy
+      dynamodb-setup:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully

@@ -11,11 +11,12 @@ RUN apt-get update \
 
 WORKDIR /build
 COPY . .
-RUN /opt/sbt/bin/sbt -batch bootstrap/assembly
+RUN /opt/sbt/bin/sbt -batch bootstrap/assembly fault-e2e/assembly
 
 FROM eclipse-temurin:17-jre-jammy
 
 WORKDIR /app
 COPY --from=build /build/modules/bootstrap/target/scala-3.6.4/cqrs-es-example-scala.jar /app/cqrs-es-example-scala.jar
+COPY --from=build /build/modules/fault-e2e/target/scala-3.6.4/cqrs-es-example-scala-fault-e2e.jar /app/cqrs-es-example-scala-fault-e2e.jar
 
 ENTRYPOINT ["java", "-cp", "/app/cqrs-es-example-scala.jar"]
