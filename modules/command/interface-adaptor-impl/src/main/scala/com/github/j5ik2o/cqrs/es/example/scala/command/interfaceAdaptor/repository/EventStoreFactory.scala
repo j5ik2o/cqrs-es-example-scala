@@ -27,16 +27,26 @@ object EventStoreFactory {
     val clientBuilder = DynamoDbClient.builder().region(Region.of(settings.region))
     settings.endpointUrl.foreach(endpoint => clientBuilder.endpointOverride(URI.create(endpoint)))
 
-    val tables = DynamoDbTableConfig
-      .builder()
-      .journalTableName(settings.journalTableName)
-      .snapshotTableName(settings.snapshotTableName)
-      .headTableName(settings.headTableName)
-      .snapshotAidIndexName(settings.snapshotIndexName)
-      .build()
+    val client = clientBuilder.build()
+    try {
+      val tables = DynamoDbTableConfig
+        .builder()
+        .journalTableName(settings.journalTableName)
+        .snapshotTableName(settings.snapshotTableName)
+        .headTableName(settings.headTableName)
+        .snapshotAidIndexName(settings.snapshotIndexName)
+        .build()
 
-    EventStore
-      .ofDynamoDB(clientBuilder.build(), tables, GroupChatSerializers.eventStoreConfig)
-      .get
+      val store = EventStore
+        .ofDynamoDB(client, tables, GroupChatSerializers.eventStoreConfig)
+        .get
+
+      Runtime.getRuntime.addShutdownHook(new Thread(() => client.close(), "dynamodb-client-shutdown"))
+      store
+    } catch {
+      case error: Throwable =>
+        client.close()
+        throw error
+    }
   }
 }
