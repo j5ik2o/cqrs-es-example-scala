@@ -165,13 +165,14 @@ final class LocalRmuRunner(
             try {
               if (resetPoller) {
                 // DY-15 resumes the stream first. A trimmed or stale iterator cannot deliver new records, so replace
-                // it before the scan; the poll loop then reads from TRIM_HORIZON while the scan runs.
+                // it and wait for the next successful read before scanning; the poll loop then keeps reading while
+                // the scan runs.
                 poller.reset()
+                pollBackoff.reset()
+                awaitStreamReads()
               }
               if (resync(label)) {
-                if (resetPoller) {
-                  pollBackoff.reset()
-                }
+                ()
               } else {
                 requestResync(label, resetPoller)
                 sleeper.sleep(pollBackoff.next())
@@ -196,6 +197,14 @@ final class LocalRmuRunner(
         ()
       case NonFatal(error) =>
         logger.error("the resync worker stopped after an unexpected failure", error)
+    }
+
+  /** Waits until the poll loop has read the stream successfully after a reset. `reset` clears `lastPollTime`, and a
+    * successful poll sets it again, so this only returns after a read that started after the reset.
+    */
+  private def awaitStreamReads(): Unit =
+    while (running && poller.lastPollTime.isEmpty) {
+      Thread.sleep(10L)
     }
 
   private def resync(label: String): Boolean =
