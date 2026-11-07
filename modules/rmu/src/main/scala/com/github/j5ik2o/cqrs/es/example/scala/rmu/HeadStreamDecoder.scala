@@ -27,7 +27,7 @@ object HeadStreamDecoder {
           .map(_.asScala.toMap)
           .getOrElse(throw new IllegalArgumentException("head stream record has no NewImage"))
         val aid = requiredString(image, "aid")
-        if (aid == ConfigAid) {
+        if (aid == ConfigAid || !AggregateType.isGroupChat(aid)) {
           None
         } else {
           val seqNr = requiredLong(image, "seq_nr")
@@ -39,6 +39,23 @@ object HeadStreamDecoder {
         }
       case _ =>
         None
+    }
+
+  /** Reads only the identifiers of a head record. The updater uses this to park a record whose payload cannot be
+    * decoded, so the failure does not stop every later record in the shard.
+    */
+  def fallbackIdentity(record: Record): Option[HeadRecordIdentity] =
+    Option(record) flatMap { value =>
+      Option(value.dynamodb())
+        .flatMap(streamRecord => Option(streamRecord.newImage()))
+        .map(_.asScala.toMap)
+        .flatMap { image =>
+          for {
+            aid <- image.get("aid").flatMap(attribute => Option(attribute.s()))
+            seqNr <- image.get("seq_nr").flatMap(attribute => Option(attribute.n())).flatMap(_.toLongOption)
+            if aid != ConfigAid && AggregateType.isGroupChat(aid)
+          } yield HeadRecordIdentity(aid, seqNr)
+        }
     }
 
   def instantFromEpochNanos(nanos: Long): Instant = {

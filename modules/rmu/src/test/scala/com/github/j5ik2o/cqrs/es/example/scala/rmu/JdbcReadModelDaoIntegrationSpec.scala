@@ -11,6 +11,7 @@ import com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat.MessageB
 import com.github.j5ik2o.cqrs.es.example.scala.command.domain.groupChat.MessageId
 import com.github.j5ik2o.cqrs.es.example.scala.command.domain.userAccount.UserAccountId
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.JdbcReadModelDao
+import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ProjectionResult
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ReadModelDatabaseConfig
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.freespec.AnyFreeSpec
@@ -18,6 +19,9 @@ import org.scalatest.matchers.should.Matchers
 
 import java.sql.DriverManager
 import java.time.Instant
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import scala.util.Try
 
 /** Opt-in check of the MySQL implementation. Set `READ_MODEL_INTEGRATION_URL` (and optionally
@@ -64,8 +68,9 @@ class JdbcReadModelDaoIntegrationSpec extends AnyFreeSpec with Matchers with Bef
       val statement = connection.createStatement()
       try {
         statement.executeUpdate("SET FOREIGN_KEY_CHECKS = 0")
-        Seq("messages", "members", "group_chats", "read_model_positions").foreach { table =>
-          statement.executeUpdate(s"TRUNCATE TABLE $table")
+        Seq("read_model_recovery_tasks", "messages", "members", "group_chats", "read_model_positions").foreach {
+          table =>
+            statement.executeUpdate(s"TRUNCATE TABLE $table")
         }
         statement.executeUpdate("SET FOREIGN_KEY_CHECKS = 1")
       } finally statement.close()
@@ -169,6 +174,32 @@ class JdbcReadModelDaoIntegrationSpec extends AnyFreeSpec with Matchers with Bef
 
       result.isFailure shouldBe true
       dao.lastProcessedSeqNr(aggregateId).get shouldBe 0L
+    }
+
+    "creates the position row once when two readers race" in {
+      val config      = requireConfig()
+      val dao         = new JdbcReadModelDao(config)
+      val applier     = new ReadModelEventApplier(dao, new FakeJournal)
+      val aggregateId = GroupChatId.newId.asString
+      val ownerMember = Member(MemberId.newId, owner, MemberRole.Admin)
+      val event       = GroupChatEvent.Created(GroupChatName("team"), ownerMember, owner)
+      val headEvent   = record(1L, event)
+      val executor    = Executors.newFixedThreadPool(2)
+      try {
+        val futures = (1 to 2).map { _ =>
+          executor.submit(new Callable[ProjectionResult] {
+            override def call(): ProjectionResult = applier.applyHeadEvent(aggregateId, headEvent).get
+          })
+        }
+        val results = futures.map(_.get(30L, TimeUnit.SECONDS))
+
+        results.count(_ == ProjectionResult.Applied) shouldBe 1
+        results.count(_ == ProjectionResult.Duplicate) shouldBe 1
+        dao.lastProcessedSeqNr(aggregateId).get shouldBe 1L
+        dao.findMembers(aggregateId, owner.asString).get should have size 1
+      } finally {
+        executor.shutdown()
+      }
     }
   }
 }

@@ -320,6 +320,9 @@ final class JdbcReadModelDao(config: ReadModelDatabaseConfig) extends ReadModelD
       val previousAutoCommit = connection.getAutoCommit
       connection.setAutoCommit(false)
       try {
+        // Create the position row in one statement before locking it. Two readers that both see no row would
+        // otherwise race on the insert and, with some isolation levels, deadlock on the lock upgrade.
+        ensurePositionRow(connection, aggregateId)
         val last = selectPositionForUpdate(connection, aggregateId)
         if (seqNr <= last) {
           connection.rollback()
@@ -341,17 +344,25 @@ final class JdbcReadModelDao(config: ReadModelDatabaseConfig) extends ReadModelD
       }
     }
 
-  private def selectPositionForUpdate(connection: Connection, aggregateId: String): Long =
-    Using.resource(
-      connection.prepareStatement(
-        "SELECT last_processed_sequence_number FROM read_model_positions WHERE aggregate_id = ? FOR UPDATE"
-      )
-    ) { statement =>
-      statement.setString(1, aggregateId)
-      Using.resource(statement.executeQuery()) { resultSet =>
-        if (resultSet.next()) resultSet.getLong(1) else 0L
-      }
+  private def ensurePositionRow(connection: Connection, aggregateId: String): Unit =
+    execute(
+      connection,
+      """INSERT INTO read_model_positions (aggregate_id, last_processed_sequence_number)
+        |VALUES (?, 0)
+        |ON DUPLICATE KEY UPDATE aggregate_id = aggregate_id""".stripMargin,
+      Seq(aggregateId)
+    )
+
+  private def selectPositionForUpdate(connection: Connection, aggregateId: String): Long = Using.resource(
+    connection.prepareStatement(
+      "SELECT last_processed_sequence_number FROM read_model_positions WHERE aggregate_id = ? FOR UPDATE"
+    )
+  ) { statement =>
+    statement.setString(1, aggregateId)
+    Using.resource(statement.executeQuery()) { resultSet =>
+      if (resultSet.next()) resultSet.getLong(1) else 0L
     }
+  }
 
   private def upsertPosition(connection: Connection, aggregateId: String, seqNr: Long): Unit =
     execute(
