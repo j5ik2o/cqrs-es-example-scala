@@ -1,5 +1,6 @@
 package com.github.j5ik2o.cqrs.es.example.scala.bootstrap
 
+import com.github.j5ik2o.cqrs.es.example.scala.rmu.RmuConfig
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
 

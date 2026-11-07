@@ -1,4 +1,4 @@
-package com.github.j5ik2o.cqrs.es.example.scala.bootstrap
+package com.github.j5ik2o.cqrs.es.example.scala.rmu
 
 import com.github.j5ik2o.cqrs.es.example.scala.command.interfaceAdaptor.repository.DynamoDbSettings
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ReadModelDatabaseConfig
@@ -80,7 +80,6 @@ object RmuConfig {
         env,
         DefaultStreamRetentionHours
       )
-      readModel <- ReadApiConfig.parseReadModel(env)
     } yield RmuConfig(
       dynamoDb = DynamoDbSettings(
         journalTableName = env("JOURNAL_TABLE_NAME").getOrElse(DefaultJournalTableName),
@@ -90,7 +89,7 @@ object RmuConfig {
         region = env("AWS_REGION").getOrElse(DefaultRegion),
         endpointUrl = env("AWS_DYNAMODB_ENDPOINT_URL").orElse(env("AWS_ENDPOINT_URL"))
       ),
-      readModel = readModel,
+      readModel = ReadModelDatabaseConfig.fromEnv(env),
       maxItemCount = maxItemCount,
       retryMaxAttempts = retryMaxAttempts,
       retryMaxElapsedMillis = retryMaxElapsedMillis,

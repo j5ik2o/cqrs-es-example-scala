@@ -22,6 +22,35 @@ jobs:
       - uses: coursier/cache-action@v6
       - run: sbt -batch lint
 
+  deploy-assets:
+    name: deploy-assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Lint the CloudFormation template and the scripts
+        run: |
+          pip install cfn-lint
+          cfn-lint deploy/rmu-deployment.template.json
+          python3 -m json.tool deploy/parameters.example.json > /dev/null
+          bash -n deploy/apply-rmu-deployment.sh
+          bash -n deploy/build-lambda-package.sh
+      - uses: coursier/setup-action@v1
+        with:
+          jvm: temurin:17
+          apps: sbt
+      - uses: coursier/cache-action@v6
+      - name: Build the Lambda package
+        run: sbt -batch lambda/assembly
+      - name: Check the Lambda package
+        run: |
+          JAR="$(find modules/lambda/target -name cqrs-es-example-scala-lambda.jar -print -quit)"
+          unzip -l "$JAR" | grep -F 'scala/lambda/LambdaReadModelUpdater.class'
+          unzip -l "$JAR" | grep -F 'scala/lambda/LambdaRecoveryWorker.class'
+          unzip -l "$JAR" | grep -F 'scala/lambda/LambdaResyncWorker.class'
+
   test:
     name: test
     runs-on: ubuntu-latest

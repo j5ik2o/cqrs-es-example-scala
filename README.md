@@ -17,6 +17,9 @@ LocalStack and MySQL.
 - Read Model Updater recovery: bounded retries with exponential backoff and full jitter, durable recovery tasks in
   `read_model_recovery_tasks` replayed from the journal, and DY-15 resynchronisation. See
   [`docs/RMU_RECOVERY.ja.md`](docs/RMU_RECOVERY.ja.md).
+- Lambda and SQS deployment assets: a CloudFormation template for the head stream event source mapping, the OnFailure
+  queue, the recovery worker and the scheduled resync worker, plus the package build and apply scripts. See
+  [`deploy/README.ja.md`](deploy/README.ja.md). The CI validates the assets but does not deploy them.
 - DynamoDB wiring for the `journal`, `snapshot` and `head` tables, including the snapshot GSI and the three
   `__config__` items that the event store validates at startup.
 - MySQL schema and migrations for the read model.
@@ -32,7 +35,8 @@ LocalStack and MySQL.
 | `modules/command/processor` | Command processing, optimistic locking through the event store, snapshot policy |
 | `modules/command/interface-adaptor-impl` | Event store repository, JSON serializers, event store factory and Write API |
 | `modules/query/interface-adaptor` | MySQL read model and GraphQL Read API |
-| `modules/rmu` | Head stream decoder, journal reader, read model applier, retry policy, recovery tasks and the resync/poll loop |
+| `modules/rmu` | Head stream decoder, journal reader, read model applier, retry policy, recovery tasks, SQS notifier and the resync/poll loop |
+| `modules/lambda` | Lambda handlers, the SQS recovery worker, the resync worker and the Lambda environment configuration |
 | `modules/bootstrap` | Write API, Read API and Read Model Updater servers, plus environment configuration |
 
 ## Requirements
@@ -47,6 +51,7 @@ LocalStack and MySQL.
 sbt compile
 sbt test
 sbt lint
+sbt lambda/assembly
 ```
 
 `sbt lint` runs `scalafmtCheckAll`, `scalafmtSbtCheck` and `scalafixAll --check`. `sbt fmt` rewrites the sources.
@@ -184,9 +189,27 @@ run handles a bounded number of tasks, and a failed task moves behind tasks that
 | `STREAM_RECOVERY_INTERVAL_MILLIS` | `60000` |
 | `STREAM_RECOVERY_MAX_TASKS_PER_RUN` | `50` |
 | `STREAM_RETENTION_HOURS` | `24` |
+| `RECOVERY_QUEUE_URL` | unset (the notifier is disabled) |
+| `RECOVERY_SQS_REGION` | `AWS_REGION`, else `ap-northeast-1` |
+| `RECOVERY_SQS_ENDPOINT_URL` | `AWS_ENDPOINT_URL`, else unset |
 | `READ_MODEL_DATABASE_URL` | see above |
 | `READ_MODEL_DATABASE_USER` | `root` |
 | `READ_MODEL_DATABASE_PASSWORD` | `password` |
+
+## Lambda and SQS deployment assets
+
+`deploy/` holds the CloudFormation template, the Lambda package build script and the apply and rollback runbook. The
+template defines the head stream event source mapping with `BisectBatchOnFunctionError` and
+`ReportBatchItemFailures`, an OnFailure SQS queue, an SQS-triggered recovery worker and a scheduled resync worker.
+The recovery notification carries identifiers only and the worker re-reads the journal.
+
+```sh
+./deploy/build-lambda-package.sh
+./deploy/apply-rmu-deployment.sh --parameters deploy/parameters.json
+```
+
+The CI validates the template and builds the package. It does not deploy. See
+[`deploy/README.ja.md`](deploy/README.ja.md) for the full runbook.
 
 ## Running the applications
 
@@ -302,16 +325,18 @@ The `dynamodb-setup` service creates the three tables from the ESA v5 storage pr
 It also writes one `__config__` item per table with the same `store_id` and `layout_version=1`, enables TTL attribute
 `ttl` on the snapshot table, and leaves the journal Streams disabled. The store validates the three items at startup.
 
-The GitHub Actions workflow has three jobs: `lint`, `test` and `e2e`. The `e2e` job runs
-`tools/scripts/docker-compose-e2e-test.sh` against the built images and LocalStack. The `main` branch requires all three
+The GitHub Actions workflow has four jobs: `lint`, `test`, `deploy-assets` and `e2e`. The `deploy-assets` job
+validates the CloudFormation template and builds the Lambda package. The `e2e` job runs
+`tools/scripts/docker-compose-e2e-test.sh` against the built images and LocalStack. The `main` branch requires all four
 checks.
 
 ## Remaining design decisions
 
 The following are not implemented and are reported in the Pull Request as design questions:
 
-- A retry limit for a head record that keeps failing. The runner currently retries the same batch on the next poll.
-- A dead letter queue for records that cannot be projected.
-- A re-synchronisation procedure when the updater is stopped for more than the 24 hour Streams retention. The journal
-  can fill gaps per aggregate, and a consistent Scan of the head table could supply the aggregates that changed while
-  the updater was down, but the trigger and the operational steps are not decided.
+- The deployment reads the MySQL credentials from CloudFormation parameters. A production stack should resolve them
+  from Secrets Manager or SSM Parameter Store.
+- The CloudWatch alarm thresholds, the recovery worker concurrency and the per-run task budget have not been tuned
+  against a production workload.
+- The fault-injection coverage is at the handler and unit level. There is no LocalStack e2e that runs the Lambda and
+  SQS resources end to end.

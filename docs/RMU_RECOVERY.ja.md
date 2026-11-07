@@ -73,6 +73,22 @@ DY-15 に従い、RMU は次の場面で head テーブルを全件走査する�
 - MySQL のデッドロック（1213）とロック待ちタイムアウト（1205）はトランザクションごと再試行する。失敗したトランザクションはロールバック済みなので、イベントを 2 回適用しない。
 - journal に欠番があれば位置を進めずに失敗する。未適用のイベントがある集約は先へ進めない。
 
+## AWS での実行
+
+AWS では、head テーブルの Streams を購読する Lambda、復旧タスクを再生する SQS ワーカー、全件再同期を実行するワーカーとして動かす。CloudFormation テンプレートと適用手順は [`deploy/README.ja.md`](../deploy/README.ja.md) にある。
+
+RMU の Lambda は部分バッチ応答を返す。復旧タスクに記録したレコードは再配信せず、同じ集約の後続レコードだけを再配信する。シーケンス番号がないレコードは、Lambda がチェックポイントを作れないためバッチ全体を失敗させる。
+
+`RecoveryNotifier` の実装は `SqsRecoveryNotifier` である。復旧タスクを永続化したあとに `RECOVERY_QUEUE_URL` へ起動メッセージを送る。通知に失敗してもタスクは残るため、復旧ワーカーは次回の実行で処理できる。
+
+| 環境変数 | 既定 |
+|:--|:--|
+| `RECOVERY_QUEUE_URL` | 未設定（通知しない） |
+| `RECOVERY_SQS_REGION` | `AWS_REGION`、なければ `ap-northeast-1` |
+| `RECOVERY_SQS_ENDPOINT_URL` | `AWS_ENDPOINT_URL`、なければ未設定（LocalStack 用） |
+
+SQS クライアントは DynamoDB とは別に設定する。DynamoDB のエンドポイントを SQS に送らないためである。
+
 ## ローカル設定
 
 Docker Compose では `tools/docker-compose/docker-compose-applications.yml` の環境変数で上書きできる。復旧タスクのテーブルは `tools/migrate/migrations/4_create_read_model_recovery_tasks.up.sql` で作る。
@@ -93,11 +109,13 @@ Docker Compose では `tools/docker-compose/docker-compose-applications.yml` の
 - 復旧タスクの保存に失敗したとき、その失敗を返す。
 - head テーブルの複数ページ走査。
 - 復号できないペイロードを識別子だけで復旧タスクに記録する。
+- Lambda の部分バッチ応答。記録済みの失敗は再配信せず、同じ集約の後続レコードだけを再配信する。
+- Lambda のレコード変換、SQS 通知本文、CloudFormation テンプレートの設定値。
 
 MySQL を使う結合テストは `READ_MODEL_INTEGRATION_URL` を設定したときだけ実行する。設定しない場合、`sbt test` ではキャンセルされる。
 
-## 残作業
+## 残課題
 
-- Lambda のイベントソースマッピングと SQS のリソースはこのリポジトリのデプロイ資産にまだない。このリポジトリが持つのはローカルの RMU である。
-- `RecoveryNotifier` は SQS の接続点である。ローカルの RMU は MySQL の復旧タスクを直接読む。
-- compose の e2e は正常系を確認する。障害の注入は単体テストで確認する。
+- 実際の AWS 環境へのデプロイと、CloudWatch アラームのしきい値の調整。
+- MySQL の認証情報を Secrets Manager か SSM Parameter Store から取得する。
+- compose の e2e は正常系を確認する。障害の注入は単体テストで確認している。LocalStack 上で Lambda と SQS を動かす e2e はまだない。
