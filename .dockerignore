@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/target
+**/.bsp
+**/.bloop
+**/.cache
+**/.cache-main
+**/.cache-tests
+.idea
+node_modules
+tools/e2e-test

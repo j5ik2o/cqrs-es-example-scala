@@ -1,0 +1,72 @@
+x-app: &app
+  image: cqrs-es-example-scala:e2e
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+
+x-dynamodb: &dynamodb
+  AWS_REGION: ap-northeast-1
+  AWS_ACCESS_KEY_ID: x
+  AWS_SECRET_ACCESS_KEY: x
+  AWS_DYNAMODB_ENDPOINT_URL: http://localstack:4566
+  JOURNAL_TABLE_NAME: cqrs-es-example-journal
+  SNAPSHOT_TABLE_NAME: cqrs-es-example-snapshot
+  HEAD_TABLE_NAME: cqrs-es-example-head
+  SNAPSHOT_ACTIVE_HISTORY_INDEX_NAME: snapshot-active-history-index
+
+x-read-model: &read-model
+  READ_MODEL_DATABASE_URL: jdbc:mysql://mysql-local:3306/cqrs_es_example?useSSL=false&allowPublicKeyRetrieval=true
+  READ_MODEL_DATABASE_USER: ceer
+  READ_MODEL_DATABASE_PASSWORD: ceer
+
+services:
+  write-api-server-1:
+    <<: *app
+    container_name: write-api-server-1
+    command: ["com.github.j5ik2o.cqrs.es.example.scala.bootstrap.WriteApiServer"]
+    ports:
+      - "48080:48080"
+    environment:
+      <<: *dynamodb
+      WRITE_API_HOST: 0.0.0.0
+      WRITE_API_PORT: 48080
+      EVENT_STORE_BACKEND: dynamodb
+    depends_on:
+      localstack:
+        condition: service_healthy
+      dynamodb-setup:
+        condition: service_completed_successfully
+
+  read-model-updater-1:
+    <<: *app
+    container_name: read-model-updater-1
+    command: ["com.github.j5ik2o.cqrs.es.example.scala.bootstrap.ReadModelUpdaterApp"]
+    environment:
+      <<: [*dynamodb, *read-model]
+      STREAM_MAX_ITEM_COUNT: 32
+      STREAM_POLL_INTERVAL_MILLIS: 500
+    depends_on:
+      localstack:
+        condition: service_healthy
+      dynamodb-setup:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+
+  read-api-server-1:
+    <<: *app
+    container_name: read-api-server-1
+    command: ["com.github.j5ik2o.cqrs.es.example.scala.bootstrap.ReadApiServer"]
+    ports:
+      - "48082:48082"
+    environment:
+      <<: *read-model
+      READ_API_HOST: 0.0.0.0
+      READ_API_PORT: 48082
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully

@@ -1,7 +1,8 @@
 # cqrs-es-example-scala
 
 Scala 3 implementation of the shared CQRS and event sourcing example. The repository contains the command side, the
-Write API, the Read API and the Read Model Updater. The docker compose based e2e is tracked in issue #4.
+Write API, the Read API and the Read Model Updater, plus a docker compose based e2e that runs the whole flow against
+LocalStack and MySQL.
 
 ## Scope of this milestone
 
@@ -233,9 +234,60 @@ Events and snapshots follow the v5 contract:
 - The snapshot manifest is `group-chat@1`.
 - The snapshot policy writes a snapshot on creation and every 10 events after that.
 
-## Remaining work
+## Docker compose e2e
 
-- Issue #4: `dynamodb-setup` for the three tables, the `__config__` items and the head Streams; a MySQL service and
-  the migration service; docker compose services for `write-api-server-1`, `read-model-updater-1` and
-  `read-api-server-1`; the e2e script that writes through the Write API, waits for the read model to catch up and
-  verifies the Read API; and the `e2e` CI job.
+`tools/docker-compose` starts LocalStack (DynamoDB and DynamoDB Streams), MySQL, the migrations, the DynamoDB setup and
+the three applications. `tools/e2e-test` runs the verification script.
+
+```sh
+# Build the application and e2e images.
+./tools/scripts/docker-compose-build.sh
+
+# Start LocalStack, MySQL, the migrations, dynamodb-setup and the three applications.
+./tools/scripts/docker-compose-up.sh
+
+# Run the full e2e and tear the stack down afterwards.
+./tools/scripts/docker-compose-e2e-test.sh
+
+# Stop the stack and remove its volumes.
+./tools/scripts/docker-compose-down.sh
+```
+
+The e2e script waits with a deadline for the Write API's `healthCheck` and the Read API's `__typename`, then writes a
+group chat, a member and a message, and polls the Read API until the read model catches up. It then renames the group
+chat, edits and deletes the message, removes the member and deletes the group chat, checking every result by polling.
+No fixed sleep decides success. A GraphQL `errors` response from a mutation fails the run, and a timeout prints the last
+response and exits non-zero.
+
+| Service | Host port | Purpose |
+|:--|:--|:--|
+| `write-api-server-1` | 48080 | Write API GraphQL at `/graphql` |
+| `read-model-updater-1` | none | head Streams subscriber |
+| `read-api-server-1` | 48082 | Read API GraphQL at `/graphql` |
+| `localstack` | 24566 | DynamoDB and DynamoDB Streams |
+| `mysql` | 23306 | read model |
+
+The `dynamodb-setup` service creates the three tables from the ESA v5 storage profile:
+
+| Table | Key | GSI | Streams |
+|:--|:--|:--|:--|
+| `cqrs-es-example-journal` | `aid` (S) / `seq_nr` (N) | none | disabled |
+| `cqrs-es-example-snapshot` | `aid` (S) / `skey` (N) | `(aid, active_history_seq_nr)`, `KEYS_ONLY` | disabled |
+| `cqrs-es-example-head` | `aid` (S) | none | enabled, `NEW_IMAGE` |
+
+It also writes one `__config__` item per table with the same `store_id` and `layout_version=1`, enables TTL attribute
+`ttl` on the snapshot table, and leaves the journal Streams disabled. The store validates the three items at startup.
+
+The GitHub Actions workflow has three jobs: `lint`, `test` and `e2e`. The `e2e` job runs
+`tools/scripts/docker-compose-e2e-test.sh` against the built images and LocalStack. The `main` branch requires all three
+checks.
+
+## Remaining design decisions
+
+The following are not implemented and are reported in the Pull Request as design questions:
+
+- A retry limit for a head record that keeps failing. The runner currently retries the same batch on the next poll.
+- A dead letter queue for records that cannot be projected.
+- A re-synchronisation procedure when the updater is stopped for more than the 24 hour Streams retention. The journal
+  can fill gaps per aggregate, and a consistent Scan of the head table could supply the aggregates that changed while
+  the updater was down, but the trigger and the operational steps are not decided.

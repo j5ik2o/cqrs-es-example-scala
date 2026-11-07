@@ -4,15 +4,17 @@ import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ReadModelGapException
 
 import scala.util.Failure
-import scala.util.Success
 import scala.util.Try
 
 /** Applies head transitions to the read model.
   *
-  * The updater discards duplicates by `(aggregate_id, seq_nr)`, which is the position stored in `read_model_positions`.
-  * When the next event skips a sequence number, it reads the missing events from the journal and applies them in
-  * ascending order first (common contract F-4). The read model operations are monotonic as well, so a duplicate that
-  * races with the position read is still a no-op.
+  * Every projection is a single database transaction that advances `read_model_positions` together with the read model
+  * rows. A sequence number that was already applied reports a duplicate and changes nothing; a sequence number that
+  * skips ahead fails with a gap. The updater then reads the missing events from the journal and retries the projection,
+  * so duplicates, older deliveries and a restart all converge on the same position.
+  *
+  * The events inside one head transition are applied in ascending `seq_nr` because a record's list is not guaranteed to
+  * be ordered.
   */
 final class ReadModelUpdater(dao: ReadModelDao, journal: JournalEventReader) {
 
@@ -22,14 +24,8 @@ final class ReadModelUpdater(dao: ReadModelDao, journal: JournalEventReader) {
     }
 
   def applyEvent(aggregateId: String, record: HeadEventRecord): Try[Unit] =
-    dao.lastProcessedSeqNr(aggregateId).flatMap { lastProcessed =>
-      if (record.seqNr <= lastProcessed) {
-        Success(())
-      } else if (record.seqNr == lastProcessed + 1L) {
-        project(aggregateId, record)
-      } else {
-        fillGap(aggregateId, lastProcessed + 1L, record.seqNr).flatMap(_ => project(aggregateId, record))
-      }
+    project(aggregateId, record).recoverWith { case gap: ReadModelGapException =>
+      fillGap(aggregateId, gap.expectedSeqNr, record.seqNr).flatMap(_ => project(aggregateId, record))
     }
 
   private def fillGap(aggregateId: String, from: Long, to: Long): Try[Unit] =
