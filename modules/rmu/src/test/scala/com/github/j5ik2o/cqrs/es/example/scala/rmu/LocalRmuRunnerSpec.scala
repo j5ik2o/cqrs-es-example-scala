@@ -333,6 +333,11 @@ class LocalRmuRunnerSpec extends AnyFreeSpec with Matchers {
       thread.join(5000L)
 
       thread.isAlive shouldBe false
+      val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+      while (runner.resyncWorkerAlive && System.nanoTime() < deadline) {
+        Thread.sleep(10L)
+      }
+      runner.resyncWorkerAlive shouldBe false
     }
   }
 }

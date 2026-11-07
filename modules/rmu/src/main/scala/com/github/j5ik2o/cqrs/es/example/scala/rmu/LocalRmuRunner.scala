@@ -63,6 +63,11 @@ final class LocalRmuRunner(
     resyncMonitor.synchronized(resyncMonitor.notifyAll())
   }
 
+  private[rmu] def resyncWorkerAlive: Boolean = {
+    val thread = resyncThread
+    thread != null && thread.isAlive
+  }
+
   def run(): Unit = {
     startResyncWorker()
     requestResync("initial reconciliation", resetPoller = false)
@@ -157,14 +162,28 @@ final class LocalRmuRunner(
         }
         request match {
           case Some((label, resetPoller)) =>
-            if (resync(label)) {
+            try {
               if (resetPoller) {
+                // DY-15 resumes the stream first. A trimmed or stale iterator cannot deliver new records, so replace
+                // it before the scan; the poll loop then reads from TRIM_HORIZON while the scan runs.
                 poller.reset()
-                pollBackoff.reset()
               }
-            } else {
-              requestResync(label, resetPoller)
-              sleeper.sleep(pollBackoff.next())
+              if (resync(label)) {
+                if (resetPoller) {
+                  pollBackoff.reset()
+                }
+              } else {
+                requestResync(label, resetPoller)
+                sleeper.sleep(pollBackoff.next())
+              }
+            } catch {
+              case error: RetryInterruptedException =>
+                throw error
+              case NonFatal(error) =>
+                // A failure outside the retry policy must not stop reconciliation for the rest of the process.
+                logger.error(s"$label failed unexpectedly; it will be retried", error)
+                requestResync(label, resetPoller)
+                sleeper.sleep(pollBackoff.next())
             }
           case None =>
             active = false
