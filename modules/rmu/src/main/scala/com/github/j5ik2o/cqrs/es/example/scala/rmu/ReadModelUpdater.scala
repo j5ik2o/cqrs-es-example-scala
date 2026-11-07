@@ -38,29 +38,30 @@ final class ReadModelUpdater(
     val ordered = transition.events.sortBy(_.seqNr)
     val target  = ordered.lastOption.map(_.seqNr).getOrElse(transition.seqNr)
 
-    def loop(remaining: List[HeadEventRecord]): Try[RecordOutcome] =
-      remaining match {
-        case Nil =>
-          Success(RecordOutcome.Applied)
-        case record :: tail =>
-          retryPolicy.run(applier.applyHeadEvent(transition.aggregateId, record)) match {
-            case Success(_) =>
-              loop(tail)
-            case Failure(error) =>
-              recovery match {
-                case Some(service) if isRecoverable(error) =>
-                  // A record can carry several events. Recovery must reach the record's last event, otherwise the
-                  // events after the failed one wait for another record or a resync.
-                  service
-                    .record(transition.aggregateId, target, record.seqNr, error)
-                    .map(_ => RecordOutcome.RecordedFailure)
-                case _ =>
-                  Failure(error)
-              }
+    var remaining: List[HeadEventRecord] = ordered.toList
+    var result: Try[RecordOutcome]       = Success(RecordOutcome.Applied)
+    var stop                             = false
+    while (!stop && remaining.nonEmpty) {
+      val record = remaining.head
+      remaining = remaining.tail
+      retryPolicy.run(applier.applyHeadEvent(transition.aggregateId, record)) match {
+        case Success(_) =>
+          ()
+        case Failure(error) =>
+          recovery match {
+            case Some(service) if isRecoverable(error) =>
+              // A record can carry several events. Recovery must reach the record's last event, otherwise the
+              // events after the failed one wait for another record or a resync.
+              result = service
+                .record(transition.aggregateId, target, record.seqNr, error)
+                .map(_ => RecordOutcome.RecordedFailure)
+            case _ =>
+              result = Failure(error)
           }
+          stop = true
       }
-
-    loop(ordered.toList)
+    }
+    result
   }
 
   /** Decodes and applies one stream record. A decode failure is parked as a recovery task when its identifiers can be

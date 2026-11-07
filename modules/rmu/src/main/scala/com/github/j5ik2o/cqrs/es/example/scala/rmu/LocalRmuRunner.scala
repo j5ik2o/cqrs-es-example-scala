@@ -6,6 +6,7 @@ import java.time.Clock
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Failure
 import scala.util.Success
+import scala.util.control.NonFatal
 
 /** The local read model updater loop.
   *
@@ -50,7 +51,7 @@ final class LocalRmuRunner(
     while (running) {
       try {
         var skipPoll = false
-        if (ResyncTrigger.shouldResync(poller.lastRecordTime, clock.instant(), settings.streamRetention)) {
+        if (ResyncTrigger.shouldResync(poller.lastPollTime, clock.instant(), settings.streamRetention)) {
           logger.warn(
             "the reader was stopped longer than the stream retention window; running a full resync"
           )
@@ -91,7 +92,7 @@ final class LocalRmuRunner(
       } catch {
         case error: RetryInterruptedException =>
           throw error
-        case error: Throwable =>
+        case NonFatal(error) =>
           logger.warn("the read model updater loop failed; the next iteration retries", error)
           sleeper.sleep(pollBackoff.next())
       }

@@ -6,6 +6,6 @@ import scala.concurrent.duration.FiniteDuration
 /** The 24 hour stream retention check that makes the reader run a full resync. */
 object ResyncTrigger {
 
-  def shouldResync(lastRecordTime: Option[Instant], now: Instant, retention: FiniteDuration): Boolean =
-    lastRecordTime.exists(recordTime => recordTime.isBefore(now.minusMillis(retention.toMillis)))
+  def shouldResync(lastPollTime: Option[Instant], now: Instant, retention: FiniteDuration): Boolean =
+    lastPollTime.exists(pollTime => pollTime.isBefore(now.minusMillis(retention.toMillis)))
 }

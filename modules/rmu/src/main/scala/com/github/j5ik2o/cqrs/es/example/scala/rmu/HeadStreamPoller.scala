@@ -31,10 +31,13 @@ final class HeadStreamPoller(
   private val lastSequenceNumbers = mutable.Map.empty[String, String]
   private val completedShards     = mutable.Set.empty[String]
 
-  @volatile private var lastRecord: Option[Instant] = None
+  @volatile private var lastPoll: Option[Instant] = None
 
-  /** The time the last record was read, or None when no record has been read yet. */
-  def lastRecordTime: Option[Instant] = lastRecord
+  /** The time the last poll completed successfully, or None when no poll has completed yet. The resync trigger uses
+    * this to detect a reader that has stopped polling for longer than the stream retention window. An idle stream is
+    * not a stopped reader, so an empty but successful poll still advances the time.
+    */
+  def lastPollTime: Option[Instant] = lastPoll
 
   /** Polls each open shard once and returns the number of records handed to the handler. The caller owns the idle or
     * failure backoff between calls.
@@ -74,9 +77,6 @@ final class HeadStreamPoller(
                     lastSequenceNumbers.update(shardId, sequenceNumber)
                     processed += 1
                   }
-                  if (page.records.nonEmpty) {
-                    lastRecord = Some(Instant.now(clock))
-                  }
                   page.nextShardIterator match {
                     case Some(next) =>
                       iterators.update(shardId, next)
@@ -95,6 +95,7 @@ final class HeadStreamPoller(
         nextShardId = shardPage.lastEvaluatedShardId
         continueShards = nextShardId.isDefined
       }
+      lastPoll = Some(Instant.now(clock))
       processed
     }
   }
@@ -104,7 +105,7 @@ final class HeadStreamPoller(
     iterators.clear()
     lastSequenceNumbers.clear()
     completedShards.clear()
-    lastRecord = None
+    lastPoll = None
   }
 
   private def initialIterator(streamArn: String, shardId: String): String =

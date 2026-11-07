@@ -92,7 +92,20 @@ class HeadStreamPollerSpec extends AnyFreeSpec with Matchers {
       poller.pollOnce("head") shouldBe Success(4)
 
       visited.toVector shouldBe Vector("1", "2", "3", "10")
-      poller.lastRecordTime.isDefined shouldBe true
+      poller.lastPollTime.isDefined shouldBe true
+    }
+
+    "advances the poll time on an empty page so an idle stream is not mistaken for a stopped reader" in {
+      val pages = mutable.Map.empty[String, mutable.Queue[Try[StreamRecordPage]]]
+      enqueue(pages, "trim-s1", page(Vector.empty, Some("s1-p2")))
+      val client = new FakeStreamClient(Vector("s1"), pages)
+      val poller = new HeadStreamPoller(client, _ => Success(()), 10)
+
+      poller.pollOnce("head") shouldBe Success(0)
+      poller.lastPollTime.isDefined shouldBe true
+
+      poller.reset()
+      poller.lastPollTime shouldBe None
     }
 
     "resumes after the last processed sequence number when the iterator expires" in {

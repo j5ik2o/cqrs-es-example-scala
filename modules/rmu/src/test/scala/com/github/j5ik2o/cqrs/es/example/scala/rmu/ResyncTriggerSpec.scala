@@ -13,7 +13,7 @@ class ResyncTriggerSpec extends AnyFreeSpec with Matchers {
   private val retention = FiniteDuration(24, HOURS)
 
   "the resync trigger" - {
-    "fires when the last record is older than the retention window" in {
+    "fires when the last successful poll is older than the retention window" in {
       ResyncTrigger.shouldResync(Some(now.minusSeconds(25L * 60L * 60L)), now, retention) shouldBe true
     }
 

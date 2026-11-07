@@ -47,9 +47,13 @@ final class ReadModelEventApplier(
     if (targetSeqNr <= 0L) {
       Success(())
     } else {
-      def loop(): Try[Unit] =
-        position(aggregateId).flatMap { current =>
+      // Apply bounded chunks in a loop. A recursive implementation would grow the stack with the aggregate's history.
+      var result: Try[Unit] = Success(())
+      var done              = false
+      while (!done && result.isSuccess) {
+        result = position(aggregateId).flatMap { current =>
           if (current >= targetSeqNr) {
+            done = true
             Success(())
           } else {
             val endSeqNr = Math.min(current + readAhead, targetSeqNr)
@@ -64,7 +68,7 @@ final class ReadModelEventApplier(
                         )
                       )
                     } else {
-                      loop()
+                      Success(())
                     }
                   }
                 }
@@ -72,7 +76,8 @@ final class ReadModelEventApplier(
             }
           }
         }
-      loop()
+      }
+      result
     }
   }
 

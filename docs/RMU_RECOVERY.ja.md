@@ -56,7 +56,7 @@ DY-15 に従い、RMU は次の場面で head テーブルを全件走査する�
 
 - 起動時。位置がまったくない初回起動も含む。
 - `TrimmedDataAccessException` を受けたとき。
-- 最後にレコードを読んだ時刻が 24 時間より前のとき（`STREAM_RETENTION_HOURS`）。
+- ポーリングが 24 時間以上成功していないとき（`STREAM_RETENTION_HOURS`）。
 
 走査は `ConsistentRead = true` で行い、`__config__` を除外する。各 head の `seq_nr` と投影位置を比べ、遅れている集約を journal から同じ位置ガードで補う。走査とストリームの両方から届いたイベントは、位置ガードで重複を捨てる。
 
