@@ -1,0 +1,15 @@
+services:
+  e2e-test:
+    image: cqrs-es-example-scala-e2e:latest
+    build:
+      context: ../e2e-test
+      dockerfile: Dockerfile
+    environment:
+      WRITE_API_SERVER_BASE_URL: http://write-api-server-1:48080/graphql
+      READ_API_SERVER_BASE_URL: http://read-api-server-1:48082/graphql
+      E2E_TIMEOUT_SECONDS: "180"
+    depends_on:
+      write-api-server-1:
+        condition: service_started
+      read-api-server-1:
+        condition: service_started

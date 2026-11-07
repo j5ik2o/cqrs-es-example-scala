@@ -43,7 +43,7 @@ enum ProjectionResult {
 /** Raised when a projection would skip a sequence number. The Read Model Updater fills the hole from the journal before
   * it retries, so this exception means the journal itself is incomplete.
   */
-final class ReadModelGapException(aggregateId: String, expectedSeqNr: Long, actualSeqNr: Long)
+final class ReadModelGapException(val aggregateId: String, val expectedSeqNr: Long, val actualSeqNr: Long)
     extends RuntimeException(
       s"read model projection gap for $aggregateId: expected sequence $expectedSeqNr, got $actualSeqNr"
     )

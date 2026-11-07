@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Brings up LocalStack, MySQL, the migrations, the DynamoDB setup and the three applications, then runs the e2e
+# verification in its own container. The stack is torn down afterwards so a failed run keeps its logs but not its
+# volumes.
+set -eu
+
+# shellcheck disable=SC2046
+cd $(dirname "$0") || exit
+
+PROJECT_NAME=cqrs-es-example-scala
+COMPOSE_DATABASES="../docker-compose/docker-compose-databases.yml"
+COMPOSE_APPLICATIONS="../docker-compose/docker-compose-applications.yml"
+COMPOSE_E2E="../docker-compose/docker-compose-e2e-test.yml"
+
+compose_full() {
+  docker compose -p "${PROJECT_NAME}" \
+    -f "${COMPOSE_DATABASES}" \
+    -f "${COMPOSE_APPLICATIONS}" \
+    -f "${COMPOSE_E2E}" \
+    "$@"
+}
+
+compose_full down -v --remove-orphans >/dev/null 2>&1 || true
+
+if ! docker compose -p "${PROJECT_NAME}" \
+  -f "${COMPOSE_DATABASES}" \
+  -f "${COMPOSE_APPLICATIONS}" \
+  up -d --build --remove-orphans "$@"; then
+  echo "the compose stack failed to start; dumping compose logs" >&2
+  compose_full logs --no-color || true
+  compose_full ps || true
+  compose_full down -v --remove-orphans >/dev/null 2>&1 || true
+  exit 1
+fi
+
+status=0
+compose_full run --rm --build --no-deps e2e-test && status=0 || status=$?
+
+if [ "${status}" -ne 0 ]; then
+  echo "e2e failed with status ${status}; dumping compose logs" >&2
+  compose_full logs --no-color || true
+  compose_full ps || true
+fi
+
+compose_full down -v --remove-orphans >/dev/null 2>&1 || true
+
+exit "${status}"

@@ -158,5 +158,17 @@ class JdbcReadModelDaoIntegrationSpec extends AnyFreeSpec with Matchers with Bef
         member.asString
       )
     }
+
+    "rolls back the position when the read model write fails in the same transaction" in {
+      val config      = requireConfig()
+      val dao         = new JdbcReadModelDao(config)
+      val aggregateId = GroupChatId.newId.asString
+      val orphan      = Message(MessageId.newId, MessageBody("orphan"), owner)
+
+      val result = dao.insertMessage(aggregateId, orphan, baseTime, 1L)
+
+      result.isFailure shouldBe true
+      dao.lastProcessedSeqNr(aggregateId).get shouldBe 0L
+    }
   }
 }

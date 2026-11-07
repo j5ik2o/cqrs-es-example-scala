@@ -33,3 +33,12 @@ jobs:
           apps: sbt
       - uses: coursier/cache-action@v6
       - run: sbt -batch test
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run docker compose e2e against LocalStack
+        run: ./tools/scripts/docker-compose-e2e-test.sh

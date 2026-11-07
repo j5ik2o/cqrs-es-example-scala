@@ -84,6 +84,35 @@ class ReadModelUpdaterSpec extends AnyFreeSpec with Matchers {
       dao.findMembers(aggregateId, owner.asString).get should have size 1
     }
 
+    "discards a delivery that is older than the processed position" in {
+      val (dao, updater) = newUpdater()
+      run(updater, transition(1L, created)).isSuccess shouldBe true
+      run(updater, transition(2L, GroupChatEvent.Renamed(GroupChatName("renamed"), owner))).isSuccess shouldBe true
+
+      run(updater, transition(1L, created)).isSuccess shouldBe true
+
+      dao.lastProcessedSeqNr(aggregateId).get shouldBe 2L
+      dao.findGroupChat(aggregateId, owner.asString).get.get.name shouldBe "renamed"
+      dao.findMembers(aggregateId, owner.asString).get should have size 1
+    }
+
+    "applies the events of one transition in ascending seq_nr" in {
+      val (dao, updater) = newUpdater()
+      val reversed = HeadTransition(
+        aggregateId,
+        seqNr = 2L,
+        events = Vector(
+          record(2L, GroupChatEvent.Renamed(GroupChatName("renamed"), owner)),
+          record(1L, created)
+        )
+      )
+
+      run(updater, reversed).isSuccess shouldBe true
+
+      dao.lastProcessedSeqNr(aggregateId).get shouldBe 2L
+      dao.findGroupChat(aggregateId, owner.asString).get.get.name shouldBe "renamed"
+    }
+
     "fills a gap from the journal before applying the received event" in {
       val journal        = new FakeJournal
       val (dao, updater) = newUpdater(journal)
@@ -109,6 +138,61 @@ class ReadModelUpdaterSpec extends AnyFreeSpec with Matchers {
       result.failed.get shouldBe a[ReadModelGapException]
       dao.lastProcessedSeqNr(aggregateId).get shouldBe 1L
       dao.findGroupChat(aggregateId, owner.asString).get.get.name shouldBe "team"
+    }
+
+    "keeps the committed prefix when a batch fails in the middle and resumes on retry" in {
+      val delegate   = new InMemoryReadModelDao
+      val failingDao = new FailingReadModelDao(delegate)
+      val journal    = new FakeJournal
+      val updater    = new ReadModelUpdater(failingDao, journal)
+      val batch = HeadTransition(
+        aggregateId,
+        seqNr = 3L,
+        events = Vector(
+          record(1L, created),
+          record(2L, GroupChatEvent.MemberAdded(addedMember, owner)),
+          record(3L, GroupChatEvent.Renamed(GroupChatName("renamed"), owner))
+        )
+      )
+
+      failingDao.failOnSeqNr = Some(3L)
+      val failed = run(updater, batch)
+      failed.isFailure shouldBe true
+      delegate.lastProcessedSeqNr(aggregateId).get shouldBe 2L
+      delegate.findMembers(aggregateId, owner.asString).get.map(_.userAccountId) should contain theSameElementsAs Seq(
+        owner.asString,
+        member.asString
+      )
+
+      failingDao.failOnSeqNr = None
+      run(updater, batch).isSuccess shouldBe true
+
+      delegate.lastProcessedSeqNr(aggregateId).get shouldBe 3L
+      delegate.findGroupChat(aggregateId, owner.asString).get.get.name shouldBe "renamed"
+      delegate.findMembers(aggregateId, owner.asString).get should have size 2
+    }
+
+    "replays the stream safely after a restart" in {
+      val dao     = new InMemoryReadModelDao
+      val journal = new FakeJournal
+      val first   = new ReadModelUpdater(dao, journal)
+      val transitions = Vector(
+        transition(1L, created),
+        transition(2L, GroupChatEvent.MemberAdded(addedMember, owner))
+      )
+
+      transitions.foreach(value => run(first, value).isSuccess shouldBe true)
+
+      val restarted = new ReadModelUpdater(dao, journal)
+      transitions.foreach(value => run(restarted, value).isSuccess shouldBe true)
+      run(restarted, transition(3L, GroupChatEvent.Renamed(GroupChatName("renamed"), owner))).isSuccess shouldBe true
+
+      dao.lastProcessedSeqNr(aggregateId).get shouldBe 3L
+      dao.findGroupChat(aggregateId, owner.asString).get.get.name shouldBe "renamed"
+      dao.findMembers(aggregateId, owner.asString).get.map(_.userAccountId) should contain theSameElementsAs Seq(
+        owner.asString,
+        member.asString
+      )
     }
 
     "projects every event type in sequence" in {
