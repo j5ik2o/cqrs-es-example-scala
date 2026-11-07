@@ -156,8 +156,9 @@ carries the `seq_nr` and the event envelopes appended by that write. The updater
 
 Shard iterators start at `TRIM_HORIZON` when a shard is first seen. Replaying a record after a restart is safe because
 the position table discards it. An expired iterator resumes after the last processed sequence number. A trimmed stream
-runs a full resync, and so does a reader whose polling has not succeeded for longer than the 24 hour stream retention. The startup scan
-reads every head with strong consistency and fills the lag from the journal before polling starts.
+runs a full resync, and so does a reader whose polling has not succeeded for longer than the 24 hour stream retention. A
+full resync resumes the head Streams first, then scans every head with strong consistency in parallel and fills the lag
+from the journal while polling continues.
 
 The recovery table is written by identifiers only. Recovery reads the position first, replays the journal in ascending
 order with the normal position guard, confirms the target position, and only then marks the task complete. A recovery
