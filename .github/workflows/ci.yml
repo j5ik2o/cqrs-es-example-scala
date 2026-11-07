@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: coursier/setup-action@v1
+        with:
+          jvm: temurin:17
+          apps: sbt
+      - uses: coursier/cache-action@v6
+      - run: sbt -batch lint
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: coursier/setup-action@v1
+        with:
+          jvm: temurin:17
+          apps: sbt
+      - uses: coursier/cache-action@v6
+      - run: sbt -batch test

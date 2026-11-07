@@ -1,13 +1,20 @@
 package com.github.j5ik2o.cqrs.es.example.scala.command.domain.userAccount
 
-import wvlet.airframe.ulid.ULID
+import com.github.j5ik2o.cqrs.es.example.scala.command.domain.UlidSupport
 
 object UserAccountId {
-  final val Prefix: String   = "UserAccount"
-  def newId(): UserAccountId = UserAccountId(ULID.newULID)
+
+  final val Prefix: String = "UserAccount"
+
+  def newId: UserAccountId = UserAccountId(UlidSupport.newUlid())
+
+  def fromString(value: String): Either[String, UserAccountId] =
+    UlidSupport.parse(value, Prefix).map(UserAccountId.apply)
+
+  def fromValue(value: String): Either[String, UserAccountId] =
+    UlidSupport.parse(value, Prefix).map(UserAccountId.apply)
 }
 
-final case class UserAccountId(private val value: ULID) {
-  def asString: String = s"${UserAccountId.Prefix}-${value.toString}"
-  def toULID: ULID     = value
+final case class UserAccountId(value: String) {
+  def asString: String = s"${UserAccountId.Prefix}-$value"
 }
