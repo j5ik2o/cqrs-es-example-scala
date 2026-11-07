@@ -279,8 +279,8 @@ It also writes one `__config__` item per table with the same `store_id` and `lay
 `ttl` on the snapshot table, and leaves the journal Streams disabled. The store validates the three items at startup.
 
 The GitHub Actions workflow has three jobs: `lint`, `test` and `e2e`. The `e2e` job runs
-`tools/scripts/docker-compose-e2e-test.sh` against the built images and LocalStack. All three jobs must be listed as
-required status checks in the branch protection rule.
+`tools/scripts/docker-compose-e2e-test.sh` against the built images and LocalStack. The `main` branch requires all three
+checks.
 
 ## Remaining design decisions
 
