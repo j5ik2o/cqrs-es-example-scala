@@ -6,7 +6,7 @@ import scala.util.Try
 
 /** Enforces the ESA core-contract T-9 upper bound on sequence numbers.
   *
-  * A sequence number is published as a JSON number, and JSON clients that use IEEE-754 doubles cannot represent every
+  * T-9 treats a sequence number as a JSON number, and JSON clients that use IEEE-754 doubles cannot represent every
   * integer above 2^53 - 1 exactly. The read model therefore refuses to store a value above that limit instead of
   * accepting a number that some clients would round.
   */
