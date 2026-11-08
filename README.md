@@ -124,6 +124,7 @@ in `tools/migrate/migrations` and run in numeric order:
 | `2_create_members.up.sql` | `members` |
 | `3_create_messages.up.sql` | `messages` |
 | `4_create_read_model_recovery_tasks.up.sql` | `read_model_recovery_tasks` |
+| `5_expand_last_processed_sequence_number.up.sql` | widens `last_processed_sequence_number` to `BIGINT` |
 
 ```sh
 for migration in tools/migrate/migrations/*.up.sql; do
@@ -136,6 +137,13 @@ done
 one transaction, so a duplicate delivery is a no-op and a sequence gap fails instead of silently skipping.
 `read_model_recovery_tasks` stores events that could not be applied. The event body is re-read from the journal when
 the task is replayed.
+
+Migration 5 widens `last_processed_sequence_number` in `read_model_positions`, `group_chats`, `members` and `messages`
+to `BIGINT`. ESA core-contract T-9 requires sequence numbers to stay within JavaScript's safe integer range
+(2^53 - 1); the application rejects a larger value in `ReadModelSequenceNumber` before it reaches MySQL. The down
+migration (`5_expand_last_processed_sequence_number.down.sql`) narrows the columns back to `INT`: on MySQL 8's default
+strict mode it fails when a stored value is above 2147483647, and without strict mode it silently clamps such a value
+to 2147483647. Check the maximum stored values before running it. See `docs/READ_MODEL_BIGINT.ja.md` for details.
 
 ### Read model environment variables
 
