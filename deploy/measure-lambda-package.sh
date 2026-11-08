@@ -86,40 +86,51 @@ unzip -l "$JAR" | awk 'NR > 3 && $1 ~ /^[0-9]+$/ && $4 != "" { print $1 "\t" $4 
   sort -rn | awk -v limit="$TOP" -F '\t' 'NR <= limit { printf "%12d  %8.2f MiB  %s\n", $1, $1 / 1048576, $2 }'
 
 if [[ "$READ_CLASSPATH" == "true" ]]; then
-  echo
-  echo "== Runtime dependency jars =="
-  CLASSPATH="$(cd "$REPO_ROOT" && sbt -batch "export lambda/Runtime/fullClasspath" 2>/dev/null | tail -n 1)"
-  JAR_COUNT=0
-  JAR_TOTAL=0
-  JAR_LIST="$(mktemp)"
-  trap 'rm -f "$JAR_LIST"' EXIT
-
-  while IFS= read -r entry; do
-    if [[ "$entry" == *.jar && -f "$entry" ]]; then
-      size="$(wc -c <"$entry" | tr -d ' ')"
-      printf '%s\t%s\n' "$size" "$(basename "$entry")" >>"$JAR_LIST"
-      JAR_COUNT=$((JAR_COUNT + 1))
-      JAR_TOTAL=$((JAR_TOTAL + size))
-    fi
-  done < <(printf '%s' "$CLASSPATH" | tr ':' '\n')
-
-  echo "lib/ is not present: the package is a shaded fat jar. Listing the runtime dependency jars that a lib/"
-  echo "layout would contain instead."
-  echo "jars: ${JAR_COUNT}, total jar bytes: ${JAR_TOTAL} ($(bytes_to_mib "$JAR_TOTAL") MiB)"
-  if [[ -s "$JAR_LIST" ]]; then
-    sort -rn "$JAR_LIST" |
-      awk -v limit="$TOP" -F '\t' 'NR <= limit { printf "%12d  %8.2f MiB  %s\n", $1, $1 / 1048576, $2 }'
+  # sbt writes its log lines around the exported classpath, so pick the last line that is an absolute path and
+  # contains a jar. LAMBDA_RUNTIME_CLASSPATH lets a caller supply the classpath without invoking sbt.
+  if [[ -z "${LAMBDA_RUNTIME_CLASSPATH:-}" ]]; then
+    LAMBDA_RUNTIME_CLASSPATH="$(cd "$REPO_ROOT" && sbt -batch -Dsbt.log.noformat=true \
+      "export lambda/Runtime/fullClasspath" 2>/dev/null | grep -E '^/.*\.jar' | tail -n 1 || true)"
   fi
 
-  echo
-  echo "== ESA backend dependencies (Spanner / Bigtable / SQLite) =="
-  for backend in spanner bigtable sqlite; do
-    matches="$(grep -i "$backend" "$JAR_LIST" | awk -F '\t' '{ print $2 }' | sort || true)"
-    if [[ -n "$matches" ]]; then
-      echo "${backend}: present"
-      printf '%s\n' "$matches" | sed 's/^/  /'
-    else
-      echo "${backend}: absent from the runtime classpath"
+  if [[ -z "$LAMBDA_RUNTIME_CLASSPATH" ]]; then
+    echo
+    echo "warning: could not read the runtime classpath from sbt; skipping the dependency list" >&2
+  else
+    echo
+    echo "== Runtime dependency jars =="
+    JAR_COUNT=0
+    JAR_TOTAL=0
+    JAR_LIST="$(mktemp)"
+    trap 'rm -f "$JAR_LIST"' EXIT
+
+    while IFS= read -r entry; do
+      if [[ "$entry" == *.jar && -f "$entry" ]]; then
+        size="$(wc -c <"$entry" | tr -d ' ')"
+        printf '%s\t%s\n' "$size" "$(basename "$entry")" >>"$JAR_LIST"
+        JAR_COUNT=$((JAR_COUNT + 1))
+        JAR_TOTAL=$((JAR_TOTAL + size))
+      fi
+    done < <(printf '%s' "$LAMBDA_RUNTIME_CLASSPATH" | tr ':' '\n')
+
+    echo "lib/ is not present: the package is a shaded fat jar. Listing the runtime dependency jars that a lib/"
+    echo "layout would contain instead."
+    echo "jars: ${JAR_COUNT}, total jar bytes: ${JAR_TOTAL} ($(bytes_to_mib "$JAR_TOTAL") MiB)"
+    if [[ -s "$JAR_LIST" ]]; then
+      sort -rn "$JAR_LIST" |
+        awk -v limit="$TOP" -F '\t' 'NR <= limit { printf "%12d  %8.2f MiB  %s\n", $1, $1 / 1048576, $2 }'
     fi
-  done
+
+    echo
+    echo "== ESA backend dependencies (Spanner / Bigtable / SQLite) =="
+    for backend in spanner bigtable sqlite; do
+      matches="$(grep -i "$backend" "$JAR_LIST" | awk -F '\t' '{ print $2 }' | sort || true)"
+      if [[ -n "$matches" ]]; then
+        echo "${backend}: present"
+        printf '%s\n' "$matches" | sed 's/^/  /'
+      else
+        echo "${backend}: absent from the runtime classpath"
+      fi
+    done
+  fi
 fi
