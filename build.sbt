@@ -179,6 +179,33 @@ lazy val `lambda` = (project in file("modules/lambda"))
   )
   .dependsOn(`rmu`)
 
+lazy val `fault-e2e` = (project in file("modules/fault-e2e"))
+  .settings(baseSettings)
+  .settings(
+    name := "cqrs-es-example-scala-fault-e2e",
+    Compile / run / mainClass := Some(
+      "com.github.j5ik2o.cqrs.es.example.scala.fault.FaultE2eMain"
+    ),
+    assembly / assemblyJarName := "cqrs-es-example-scala-fault-e2e.jar",
+    assembly / mainClass := Some(
+      "com.github.j5ik2o.cqrs.es.example.scala.fault.FaultE2eMain"
+    ),
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "services", _*) => MergeStrategy.concat
+      case PathList("META-INF", "MANIFEST.MF")  => MergeStrategy.discard
+      case PathList("META-INF", _*)             => MergeStrategy.discard
+      case "module-info.class"                  => MergeStrategy.discard
+      case "reference.conf"                     => MergeStrategy.concat
+      case "application.conf"                   => MergeStrategy.concat
+      case _                                    => MergeStrategy.first
+    },
+    libraryDependencies ++= Seq(
+      "software.amazon.awssdk" % "url-connection-client" % awsSdkVersion,
+      "ch.qos.logback"         % "logback-classic"       % logbackVersion
+    )
+  )
+  .dependsOn(`rmu`, `query-interface-adaptor`, `command-interface-adaptor-impl`)
+
 lazy val root = (project in file("."))
   .settings(baseSettings)
   .settings(
@@ -192,7 +219,8 @@ lazy val root = (project in file("."))
     `query-interface-adaptor`,
     `rmu`,
     `lambda`,
-    `bootstrap`
+    `bootstrap`,
+    `fault-e2e`
   )
 
 // --- Custom commands

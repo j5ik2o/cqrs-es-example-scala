@@ -142,7 +142,14 @@ class LocalRmuRunnerSpec extends AnyFreeSpec with Matchers {
     override def storeId(): Try[String] = Success("store-1")
   }
 
-  private def noSleep: Sleeper = _ => ()
+  /** Yields between polls instead of spinning.
+    *
+    * A no-op sleeper makes the runner's poll loop a tight loop. When the stream keeps reporting trimmed records the
+    * loop also re-enters `resyncMonitor` for every request, which starves the reconciliation worker on a busy or
+    * single-CPU runner: the startup scan never starts and the wait times out. A one millisecond sleep keeps the test
+    * fast and gives the worker time to take the monitor.
+    */
+  private def yieldingSleeper: Sleeper = delay => Thread.sleep(Math.max(1L, delay.toMillis))
 
   private def fastBackoff: Backoff =
     new Backoff(FiniteDuration(1, MILLISECONDS), FiniteDuration(2, MILLISECONDS), _ => FiniteDuration(0, NANOSECONDS))
@@ -185,7 +192,7 @@ class LocalRmuRunnerSpec extends AnyFreeSpec with Matchers {
       recoveryService = recovery,
       retryPolicy = RetryPolicy.noRetry,
       pollBackoff = fastBackoff,
-      sleeper = noSleep
+      sleeper = yieldingSleeper
     )
   }
 

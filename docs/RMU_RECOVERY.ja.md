@@ -112,10 +112,20 @@ Docker Compose では `tools/docker-compose/docker-compose-applications.yml` の
 - Lambda の部分バッチ応答。記録済みの失敗は再配信せず、同じ集約の後続レコードだけを再配信する。
 - Lambda のレコード変換、SQS 通知本文、CloudFormation テンプレートの設定値。
 
+`tools/docker-compose` の compose e2e は、正常系のあとに障害注入の e2e を実行する（`modules/fault-e2e`）。長く動く `read-model-updater-1` を止めてから、LocalStack のテーブルと MySQL に対して本番の `LocalRmuRunner` / `Resyncer` / `ReadModelUpdater` / `RecoveryService` を動かし、次の 5 つを確認する。
+
+- 起動時の全件 Scan 中に head 更新が入っても、購読再開→並行 Scan→journal 補完で取りこぼさない。
+- `TrimmedDataAccessException` のあとに全件再同期し、走査で遅れを埋め、そのあと購読を続ける。
+- `ExpiredIteratorException` のあとは `AFTER_SEQUENCE_NUMBER` でシャードを再開し、全件再同期はしない。
+- リトライ上限超過で `read_model_recovery_tasks` に永続タスクを作り、journal からの再生で完了する。
+- 現在位置 + 1 だけを適用し、重複・逆順・欠番を捨てる。投影が失敗すれば位置も進めない。
+
+待ち合わせはすべて期限付きのポーリングで、タイムアウトは説明と最後に観測した位置を出して失敗する。実行手順は README の「Fault-injection e2e」にある。
+
 MySQL を使う結合テストは `READ_MODEL_INTEGRATION_URL` を設定したときだけ実行する。設定しない場合、`sbt test` ではキャンセルされる。
 
 ## 残課題
 
 - 実際の AWS 環境へのデプロイと、CloudWatch アラームのしきい値の調整。
 - MySQL の認証情報を Secrets Manager か SSM Parameter Store から取得する。
-- compose の e2e は正常系を確認する。障害の注入は単体テストで確認している。LocalStack 上で Lambda と SQS を動かす e2e はまだない。
+- compose の e2e は正常系とローカル RMU の障害注入を確認する。LocalStack 上で Lambda と SQS を動かす e2e はまだない。
