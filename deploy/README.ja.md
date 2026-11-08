@@ -41,7 +41,13 @@ S3 にアップロードするときは `--upload` とバケットを指定す�
 
 スクリプトはビルド後に jar のパス、サイズ、SHA-256 を表示する。`--skip-build` を付けると、既存の jar をそのまま使う。`--output` で jar の複製先を変えられる。アップロードしたバケットとキーを、テンプレートの `CodeS3Bucket` と `CodeS3Key` に渡す。
 
-この jar は約 120 MB ある。Lambda の展開後の上限は 250 MB であるため、S3 に置いて `CodeS3Bucket` と `CodeS3Key` で参照する。50 MB を超える配布物をインラインで渡すことはできない。
+サイズの内訳は `deploy/measure-lambda-package.sh` で確認できる。圧縮サイズ、展開後のサイズ、上位のエントリ、依存 JAR、Spanner / Bigtable / SQLite 関連の有無を表示する。
+
+```sh
+./deploy/measure-lambda-package.sh
+```
+
+この jar は圧縮時で約 119 MiB、展開後で約 294 MiB ある。Lambda の展開後の上限は 250 MB なので、現状の配布物は上限を超えている。計測の詳細と残課題は `docs/LAMBDA_PACKAGE_SIZE.ja.md` を参照。S3 に置いて `CodeS3Bucket` と `CodeS3Key` で参照し、50 MB を超える配布物をインラインで渡さない。
 
 Lambda を更新するときは、新しい jar を別のキーにアップロードし、`CodeS3Key` を変えてスタックを更新する。同じキーを上書きすると、CloudFormation はコードの変更を検知しないため、スタックは古い配布物のままになる。
 
@@ -205,7 +211,7 @@ aws cloudformation delete-stack --stack-name cqrs-es-example-rmu
 
 `LambdaRmuConfigSpec` が環境変数の解析を検査する。`ReadApiConfigSpec` は `RmuConfig` の既定値と上書きを引き続き検査する。
 
-CI の `deploy-assets` ジョブは、`cfn-lint` でテンプレートを検査し、シェルスクリプトの構文を確認し、`sbt lambda/assembly` で配布物を作る。jar に 3 つのハンドラのクラスが入っていることも確認する。
+CI の `deploy-assets` ジョブは、`cfn-lint` でテンプレートを検査し、シェルスクリプトの構文を確認し、`sbt lambda/assembly` で配布物を作る。jar に 3 つのハンドラのクラスが入っていることも確認する。さらに `deploy/measure-lambda-package.sh` を実行し、サイズと依存 JAR の一覧をログに出す（合否のしきい値は設けない）。
 
 ## 残課題
 
