@@ -252,18 +252,20 @@ final class InMemoryReadModelDao extends ReadModelDao {
   }
 
   private def project(aggregateId: String, seqNr: Long)(apply: => Unit): Try[ProjectionResult] =
-    Try(synchronized {
-      val last = positions.getOrElse(aggregateId, 0L)
-      if (seqNr <= last) {
-        ProjectionResult.Duplicate
-      } else if (seqNr != last + 1L) {
-        throw new ReadModelGapException(aggregateId, last + 1L, seqNr)
-      } else {
-        apply
-        positions.update(aggregateId, seqNr)
-        ProjectionResult.Applied
-      }
-    })
+    ReadModelSequenceNumber.validate(seqNr).flatMap { _ =>
+      Try(synchronized {
+        val last = positions.getOrElse(aggregateId, 0L)
+        if (seqNr <= last) {
+          ProjectionResult.Duplicate
+        } else if (seqNr != last + 1L) {
+          throw new ReadModelGapException(aggregateId, last + 1L, seqNr)
+        } else {
+          apply
+          positions.update(aggregateId, seqNr)
+          ProjectionResult.Applied
+        }
+      })
+    }
 
   private def activeGroupChat(id: String): Option[GroupChatRow] =
     groupChats.get(id).filterNot(_.disabled)

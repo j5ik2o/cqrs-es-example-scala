@@ -13,6 +13,7 @@ import com.github.j5ik2o.cqrs.es.example.scala.command.domain.userAccount.UserAc
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.JdbcReadModelDao
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ProjectionResult
 import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ReadModelDatabaseConfig
+import com.github.j5ik2o.cqrs.es.example.scala.query.interfaceAdaptor.readmodel.ReadModelSequenceNumber
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.freespec.AnyFreeSpec
 import org.scalatest.matchers.should.Matchers
@@ -78,6 +79,45 @@ class JdbcReadModelDaoIntegrationSpec extends AnyFreeSpec with Matchers with Bef
   }
 
   override def beforeEach(): Unit = integrationConfig.foreach(clear)
+
+  private def seedPosition(config: ReadModelDatabaseConfig, aggregateId: String, seqNr: Long): Unit = {
+    val connection = DriverManager.getConnection(config.url, config.user, config.password)
+    try {
+      val statement = connection.prepareStatement(
+        """INSERT INTO read_model_positions (aggregate_id, last_processed_sequence_number)
+          |VALUES (?, ?)
+          |ON DUPLICATE KEY UPDATE last_processed_sequence_number = VALUES(last_processed_sequence_number)""".stripMargin
+      )
+      try {
+        statement.setString(1, aggregateId)
+        statement.setLong(2, seqNr)
+        statement.executeUpdate()
+      } finally statement.close()
+    } finally connection.close()
+  }
+
+  private def sequenceNumbers(
+      config: ReadModelDatabaseConfig,
+      table: String,
+      column: String,
+      value: String
+  ): Vector[Long] = {
+    val connection = DriverManager.getConnection(config.url, config.user, config.password)
+    try {
+      val statement = connection.prepareStatement(
+        s"SELECT last_processed_sequence_number FROM $table WHERE $column = ?"
+      )
+      try {
+        statement.setString(1, value)
+        val resultSet = statement.executeQuery()
+        try {
+          val rows = Vector.newBuilder[Long]
+          while (resultSet.next()) rows += resultSet.getLong(1)
+          rows.result()
+        } finally resultSet.close()
+      } finally statement.close()
+    } finally connection.close()
+  }
 
   private def record(seqNr: Long, event: GroupChatEvent): HeadEventRecord =
     HeadEventRecord(seqNr, baseTime.plusSeconds(seqNr), event.manifest, event)
@@ -200,6 +240,66 @@ class JdbcReadModelDaoIntegrationSpec extends AnyFreeSpec with Matchers with Bef
       } finally {
         executor.shutdown()
       }
+    }
+
+    "stores 64-bit sequence numbers in all four tables" in {
+      val config     = requireConfig()
+      val dao        = new JdbcReadModelDao(config)
+      val occurredAt = baseTime
+
+      Seq(2147483648L, 9007199254740990L, 9007199254740991L).foreach { seqNr =>
+        // group_chats and members are written together by insertGroupChat.
+        val groupChatAggregate = s"bigint-group-chat-$seqNr"
+        val groupChatAdmin     = Member(MemberId.newId, owner, MemberRole.Admin)
+        seedPosition(config, groupChatAggregate, seqNr - 1L)
+        val createdGroupChat = dao.insertGroupChat(groupChatAggregate, "team", groupChatAdmin, occurredAt, seqNr)
+        createdGroupChat.get shouldBe ProjectionResult.Applied
+        dao.lastProcessedSeqNr(groupChatAggregate).get shouldBe seqNr
+        sequenceNumbers(config, "group_chats", "id", groupChatAggregate) shouldBe Vector(seqNr)
+        sequenceNumbers(config, "members", "group_chat_id", groupChatAggregate) shouldBe Vector(seqNr)
+
+        // A member added later needs a group chat row for the foreign key, so create one at seq 1 first.
+        val memberAggregate = s"bigint-member-$seqNr"
+        val memberChatAdmin = Member(MemberId.newId, owner, MemberRole.Admin)
+        val createdOwner    = dao.insertGroupChat(memberAggregate, "team", memberChatAdmin, occurredAt, 1L)
+        createdOwner.get shouldBe ProjectionResult.Applied
+        seedPosition(config, memberAggregate, seqNr - 1L)
+        val added       = Member(MemberId.newId, member, MemberRole.Member)
+        val addedMember = dao.insertMember(memberAggregate, added, occurredAt, seqNr)
+        addedMember.get shouldBe ProjectionResult.Applied
+        sequenceNumbers(config, "members", "group_chat_id", memberAggregate) should contain(seqNr)
+
+        // Messages also need the group chat row for the foreign key.
+        val messageAggregate = s"bigint-message-$seqNr"
+        val messageChatAdmin = Member(MemberId.newId, owner, MemberRole.Admin)
+        val createdHost      = dao.insertGroupChat(messageAggregate, "team", messageChatAdmin, occurredAt, 1L)
+        createdHost.get shouldBe ProjectionResult.Applied
+        seedPosition(config, messageAggregate, seqNr - 1L)
+        val posted        = Message(MessageId.newId, MessageBody("hello"), owner)
+        val postedMessage = dao.insertMessage(messageAggregate, posted, occurredAt, seqNr)
+        postedMessage.get shouldBe ProjectionResult.Applied
+        sequenceNumbers(config, "messages", "group_chat_id", messageAggregate) shouldBe Vector(seqNr)
+        dao.lastProcessedSeqNr(messageAggregate).get shouldBe seqNr
+      }
+    }
+
+    "rejects a sequence number above the T-9 limit without writing" in {
+      val config      = requireConfig()
+      val dao         = new JdbcReadModelDao(config)
+      val aggregateId = "bigint-overflow"
+      seedPosition(config, aggregateId, ReadModelSequenceNumber.MaxSafeValue)
+
+      val result = dao.insertGroupChat(
+        aggregateId,
+        "team",
+        Member(MemberId.newId, owner, MemberRole.Admin),
+        baseTime,
+        ReadModelSequenceNumber.MaxSafeValue + 1L
+      )
+
+      result.failed.get shouldBe a[ReadModelSequenceNumber.OutOfRangeException]
+      dao.lastProcessedSeqNr(aggregateId).get shouldBe ReadModelSequenceNumber.MaxSafeValue
+      sequenceNumbers(config, "group_chats", "id", aggregateId) shouldBe empty
     }
   }
 }

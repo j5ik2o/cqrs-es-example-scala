@@ -330,31 +330,33 @@ final class JdbcReadModelDao(config: ReadModelDatabaseConfig) extends ReadModelD
     )
 
   private def withPosition(aggregateId: String, seqNr: Long)(apply: Connection => Unit): Try[ProjectionResult] =
-    withConnection { connection =>
-      val previousAutoCommit = connection.getAutoCommit
-      connection.setAutoCommit(false)
-      try {
-        // Create the position row in one statement before locking it. Two readers that both see no row would
-        // otherwise race on the insert and, with some isolation levels, deadlock on the lock upgrade.
-        ensurePositionRow(connection, aggregateId)
-        val last = selectPositionForUpdate(connection, aggregateId)
-        if (seqNr <= last) {
-          connection.rollback()
-          ProjectionResult.Duplicate
-        } else if (seqNr != last + 1L) {
-          throw new ReadModelGapException(aggregateId, last + 1L, seqNr)
-        } else {
-          apply(connection)
-          upsertPosition(connection, aggregateId, seqNr)
-          connection.commit()
-          ProjectionResult.Applied
+    ReadModelSequenceNumber.validate(seqNr).flatMap { _ =>
+      withConnection { connection =>
+        val previousAutoCommit = connection.getAutoCommit
+        connection.setAutoCommit(false)
+        try {
+          // Create the position row in one statement before locking it. Two readers that both see no row would
+          // otherwise race on the insert and, with some isolation levels, deadlock on the lock upgrade.
+          ensurePositionRow(connection, aggregateId)
+          val last = selectPositionForUpdate(connection, aggregateId)
+          if (seqNr <= last) {
+            connection.rollback()
+            ProjectionResult.Duplicate
+          } else if (seqNr != last + 1L) {
+            throw new ReadModelGapException(aggregateId, last + 1L, seqNr)
+          } else {
+            apply(connection)
+            upsertPosition(connection, aggregateId, seqNr)
+            connection.commit()
+            ProjectionResult.Applied
+          }
+        } catch {
+          case error: Throwable =>
+            connection.rollback()
+            throw error
+        } finally {
+          connection.setAutoCommit(previousAutoCommit)
         }
-      } catch {
-        case error: Throwable =>
-          connection.rollback()
-          throw error
-      } finally {
-        connection.setAutoCommit(previousAutoCommit)
       }
     }
 
