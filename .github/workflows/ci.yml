@@ -37,6 +37,7 @@ jobs:
           python3 -m json.tool deploy/parameters.example.json > /dev/null
           bash -n deploy/apply-rmu-deployment.sh
           bash -n deploy/build-lambda-package.sh
+          bash -n deploy/measure-lambda-package.sh
       - uses: coursier/setup-action@v1
         with:
           jvm: temurin:17
@@ -44,6 +45,8 @@ jobs:
       - uses: coursier/cache-action@v6
       - name: Build the Lambda package
         run: sbt -batch lambda/assembly
+      - name: Report the Lambda package size and dependency list
+        run: ./deploy/measure-lambda-package.sh
       - name: Check the Lambda package
         run: |
           JAR="$(find modules/lambda/target -name cqrs-es-example-scala-lambda.jar -print -quit)"
