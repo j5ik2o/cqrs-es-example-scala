@@ -9,11 +9,18 @@
 -- If strict mode is disabled, the values are instead clamped to 2147483647, silently corrupting the stored position: a
 -- later projection then sees a position behind the journal and may apply or reject events incorrectly.
 --
--- Before running this, confirm that no value exceeds 2147483647:
+-- Before running this, stop the Read Model Updater and every other read model writer, then confirm that no stored
+-- value exceeds 2147483647:
 --   SELECT MAX(last_processed_sequence_number) FROM read_model_positions;
 --   SELECT MAX(last_processed_sequence_number) FROM group_chats;
 --   SELECT MAX(last_processed_sequence_number) FROM members;
 --   SELECT MAX(last_processed_sequence_number) FROM messages;
+--
+-- A stored maximum inside the INT range is not enough on its own. If the Read Model Updater is behind and the latest
+-- head or journal seq_nr for an aggregate is already above 2147483647, that value has not been projected yet, so the
+-- SELECTs above still pass. After the down migration the projection would fail against the narrowed column. Compare
+-- the latest head and journal seq_nr with read_model_positions.last_processed_sequence_number for every aggregate and
+-- treat any pending value above 2147483647 as a blocker.
 ALTER TABLE `read_model_positions`
     MODIFY COLUMN `last_processed_sequence_number` INT NOT NULL;
 

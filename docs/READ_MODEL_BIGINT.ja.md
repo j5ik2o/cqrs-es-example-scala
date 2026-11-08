@@ -34,7 +34,13 @@ IEEE-754 倍精度浮動小数点数を使うクライアントは 2^53 - 1 を�
 - strict モードが無効な場合、値は 2147483647 に丸められる。読み取りモデルの位置がジャーナルより後ろにずれ、
   その後の投影が重複や欠落を誤判定するおそれがある。
 
-down を実行する前に、次のクエリで最大値を確認する。
+down を実行する前に、次の手順で確認する。
+
+1. Read Model Updater と、読み取りモデルに書き込むすべてのプロセスを停止する。
+2. 保存済みの最大値を確認する。次のクエリのいずれかが 2147483647 を超えていれば down を実行しない。
+3. 保存済みの最大値が範囲内でも、未投影のシーケンス番号が 2147483647 を超えていないか確認する。head / journal の
+   最新 `seq_nr` と `read_model_positions.last_processed_sequence_number` を集計ごとに突き合わせ、未投影の値が
+   上限を超えていれば down を実行しない。down 後にその値を投影すると、狭めた列に書き込めず失敗する。
 
 ```sql
 SELECT MAX(last_processed_sequence_number) FROM read_model_positions;
@@ -42,8 +48,6 @@ SELECT MAX(last_processed_sequence_number) FROM group_chats;
 SELECT MAX(last_processed_sequence_number) FROM members;
 SELECT MAX(last_processed_sequence_number) FROM messages;
 ```
-
-いずれかが 2147483647 を超えている場合は down を実行しない。
 
 ## テスト
 
