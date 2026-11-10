@@ -33,11 +33,10 @@ if ! compose_full up -d --build --remove-orphans "$@" \
   exit 1
 fi
 
-published=$(docker ps --filter "label=com.docker.compose.project=${PROJECT_NAME}" --format '{{.Names}} {{.Ports}}' |
-  grep -e '->' || true)
-if [ -n "${published}" ]; then
-  echo "the e2e stack publishes host ports:" >&2
-  echo "${published}" >&2
+# A failed listing counts as a failure, so that the check is never skipped silently.
+if ! containers=$(docker ps --filter "label=com.docker.compose.project=${PROJECT_NAME}" \
+  --format '{{.Names}} {{.Ports}}') || printf '%s\n' "${containers}" | grep -e '->' >&2; then
+  echo "the e2e stack must not publish host ports" >&2
   compose_full down -v --remove-orphans >/dev/null 2>&1 || true
   exit 1
 fi
