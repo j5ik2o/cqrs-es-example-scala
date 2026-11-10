@@ -1,4 +1,16 @@
 services:
+  # The e2e containers reach the stack by service name on the compose network. The host ports that the base files
+  # publish are for a manually started stack, and in an e2e run they only risk a bind conflict on a shared or
+  # concurrent runner. Reset them here.
+  localstack:
+    ports: !reset []
+  mysql:
+    ports: !reset []
+  write-api-server-1:
+    ports: !reset []
+  read-api-server-1:
+    ports: !reset []
+
   e2e-test:
     image: cqrs-es-example-scala-e2e:latest
     build:

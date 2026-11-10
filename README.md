@@ -323,6 +323,10 @@ response and exits non-zero.
 | `mysql` | 23306 | read model |
 | `fault-e2e` | none (one-shot) | RMU fault-injection e2e |
 
+`docker-compose-up.sh` publishes these host ports. `docker-compose-e2e-test.sh` publishes none, because
+`docker-compose-e2e-test.yml` resets them and the e2e containers reach the stack on the compose network. The e2e run
+therefore does not fail when another process holds one of these ports.
+
 The `dynamodb-setup` service creates the three tables from the ESA v5 storage profile:
 
 | Table | Key | GSI | Streams |

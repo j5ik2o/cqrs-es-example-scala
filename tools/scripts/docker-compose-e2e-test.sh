@@ -22,13 +22,21 @@ compose_full() {
 
 compose_full down -v --remove-orphans >/dev/null 2>&1 || true
 
-if ! docker compose -p "${PROJECT_NAME}" \
-  -f "${COMPOSE_DATABASES}" \
-  -f "${COMPOSE_APPLICATIONS}" \
-  up -d --build --remove-orphans "$@"; then
+# The e2e file is part of `up` because it resets the host ports of the base files. The services are named so that the
+# one-shot e2e services do not start here. Their dependencies start with them.
+if ! compose_full up -d --build --remove-orphans "$@" \
+  write-api-server-1 read-model-updater-1 read-api-server-1; then
   echo "the compose stack failed to start; dumping compose logs" >&2
   compose_full logs --no-color || true
   compose_full ps || true
+  compose_full down -v --remove-orphans >/dev/null 2>&1 || true
+  exit 1
+fi
+
+# A failed listing counts as a failure, so that the check is never skipped silently.
+if ! containers=$(docker ps --filter "label=com.docker.compose.project=${PROJECT_NAME}" \
+  --format '{{.Names}} {{.Ports}}') || printf '%s\n' "${containers}" | grep -e '->' >&2; then
+  echo "the e2e stack must not publish host ports" >&2
   compose_full down -v --remove-orphans >/dev/null 2>&1 || true
   exit 1
 fi
