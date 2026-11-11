@@ -308,6 +308,10 @@ the three applications. `tools/e2e-test` runs the verification script.
 ./tools/scripts/docker-compose-down.sh
 ```
 
+MySQL 26.10 cannot start on a data directory that MySQL 8.4, the earlier image of this stack, created.
+`docker-compose-up.sh` keeps the volumes of existing containers, so if a stack started before the image change
+remains, run `docker-compose-down.sh` first. It removes the MySQL and LocalStack data.
+
 The e2e script waits with a deadline for the Write API's `healthCheck` and the Read API's `__typename`, then writes a
 group chat, a member and a message, and polls the Read API until the read model catches up. It then renames the group
 chat, edits and deletes the message, removes the member and deletes the group chat, checking every result by polling.
