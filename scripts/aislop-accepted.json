@@ -1,0 +1,23 @@
+{
+  "engines": [
+    "format",
+    "lint",
+    "code-quality",
+    "ai-slop",
+    "security"
+  ],
+  "missingToolsAllowed": {},
+  "accepted": [
+    {
+      "reason": "ローカル開発用の docker-compose に開発用のデータベース接続情報が直書きされている既存課題。今回の aislop 組み込みの範囲外であり、order.md の指示により既存指摘へのコード修正は行わない。",
+      "findings": [
+        {
+          "engine": "security",
+          "rule": "security/hardcoded-secret",
+          "file": "tools/docker-compose/docker-compose-databases.yml",
+          "message": "Possible Database connection string with credentials detected in source code"
+        }
+      ]
+    }
+  ]
+}

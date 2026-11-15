@@ -74,3 +74,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run docker compose e2e against LocalStack
         run: ./tools/scripts/docker-compose-e2e-test.sh
+
+  aislop:
+    name: aislop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:aislop
+      - run: npm run test:aislop
