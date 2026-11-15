@@ -1,6 +1,6 @@
 services:
   localstack:
-    image: localstack/localstack:2.3.2
+    image: localstack/localstack:4.14.0
     hostname: localstack
     ports:
       - "24566:4566"
@@ -12,7 +12,7 @@ services:
       DYNAMODB_IN_MEMORY: "1"
       HOSTNAME_EXTERNAL: localstack
     volumes:
-      - "${TMPDIR:-/tmp}/localstack-cqrs-es-scala:/tmp/localstack"
+      # LocalStack v4 wipes /tmp/localstack on startup, so it cannot be a bind mount.
       - "/var/run/docker.sock:/var/run/docker.sock"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
@@ -21,7 +21,7 @@ services:
       retries: 30
 
   mysql:
-    image: mysql:8.4
+    image: mysql:26.10
     hostname: mysql-local
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
     ports:
@@ -32,7 +32,7 @@ services:
       MYSQL_PASSWORD: ceer
       MYSQL_DATABASE: cqrs_es_example
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      test: MYSQL_PWD=password mysql -h127.0.0.1 -P3306 -uroot -e "SELECT 1"
       interval: 5s
       timeout: 5s
       retries: 30
