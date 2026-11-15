@@ -1,0 +1,13 @@
+{
+  "name": "cqrs-es-example-scala",
+  "private": true,
+  "version": "0.0.0",
+  "description": "aislop check tooling for cqrs-es-example-scala",
+  "scripts": {
+    "check:aislop": "node scripts/aislop-check-bootstrap.mjs check",
+    "test:aislop": "node scripts/aislop-check-bootstrap.mjs test"
+  },
+  "devDependencies": {
+    "aislop": "0.20.1"
+  }
+}
