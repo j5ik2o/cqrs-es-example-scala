@@ -16,7 +16,7 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - run: "true"
+      - run: exit 1
 
   deploy-assets:
     name: deploy-assets
@@ -40,7 +40,7 @@ jobs:
   aislop:
     name: aislop
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' }}
+    needs: lint
     steps:
       - run: "true"
 
