@@ -407,3 +407,5 @@ The following are not implemented and are reported in the Pull Request as design
   against a production workload.
 - The local RMU has a fault-injection e2e (see above). There is still no LocalStack e2e that runs the deployed Lambda,
   DynamoDB Streams event source mapping and SQS recovery resources end to end.
+
+<!-- CI retarget fixture with no workflow changes in the head. -->
