@@ -157,7 +157,8 @@ jobs:
       - run: npm run test:aislop
 
   required:
-    name: CI required
+    # An off-main run for the same head must not publish the main check name.
+    name: ${{ github.base_ref == 'main' && 'CI required' || 'CI summary' }}
     if: ${{ always() && github.event_name == 'pull_request' }}
     needs: [revision, lint, test, e2e, deploy-assets, aislop]
     runs-on: ubuntu-latest
