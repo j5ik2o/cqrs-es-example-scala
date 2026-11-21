@@ -14,32 +14,33 @@ permissions:
 jobs:
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
-      - run: sleep 300
+      - run: exit 1
 
   deploy-assets:
     name: deploy-assets
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - run: "true"
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - run: "true"
 
   e2e:
     name: e2e
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 60
     steps:
       - run: "true"
 
   aislop:
     name: aislop
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
+    needs: lint
     steps:
       - run: "true"
 
@@ -47,7 +48,7 @@ jobs:
     name: CI required
     if: ${{ always() && github.event_name == 'pull_request' }}
     needs: [lint, test, e2e, deploy-assets, aislop]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - name: Require all five CI jobs to succeed
         env:
