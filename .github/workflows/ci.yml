@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+    # Changing the base branch emits edited without changing the head SHA.
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -87,3 +89,19 @@ jobs:
       - run: npm ci
       - run: npm run check:aislop
       - run: npm run test:aislop
+
+  required:
+    name: CI required
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: [lint, test, e2e, deploy-assets, aislop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all five CI jobs to succeed
+        env:
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          jq -e '
+            map_values(.result) | debug
+            | [.lint, .test, .e2e, .["deploy-assets"], .aislop]
+            | all(. == "success")
+          ' <<< "$CI_RESULTS"
