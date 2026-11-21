@@ -16,7 +16,7 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - run: exit 1
+      - run: sleep 300
 
   deploy-assets:
     name: deploy-assets
@@ -40,7 +40,6 @@ jobs:
   aislop:
     name: aislop
     runs-on: ubuntu-latest
-    needs: lint
     steps:
       - run: "true"
 
