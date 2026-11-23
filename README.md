@@ -1,7 +1,7 @@
 # cqrs-es-example-scala
 
 Scala 3 implementation of the shared CQRS and event sourcing example. The repository contains the command side, the
-Write API, the Read API and the Read Model Updater, plus a docker compose based e2e that runs the whole flow against
+Write API, the Read API and the Read Model Updater, plus a Docker Compose end-to-end test that runs the whole flow against
 LocalStack and MySQL.
 
 ## Scope of this milestone
