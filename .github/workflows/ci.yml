@@ -39,6 +39,7 @@ jobs:
         id: resolve
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
           EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/pr-test-merge.sh

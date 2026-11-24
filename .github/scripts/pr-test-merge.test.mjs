@@ -62,7 +62,7 @@ function fixture(t) {
   chmodSync(join(bin, "sleep"), 0o755);
 
   const output = join(dir, "output");
-  const resolve = ({ pr = `open\tmain\t${head}`, eventHead = head, env = {} } = {}) => {
+  const resolve = ({ pr = `open\tmain\t${head}`, eventBaseRef = "main", eventHead = head, env = {} } = {}) => {
     rmSync(output, { force: true });
     rmSync(calls, { force: true });
     const result = spawnSync("bash", [script], {
@@ -72,6 +72,7 @@ function fixture(t) {
         ...process.env,
         PATH: `${bin}:${process.env.PATH}`,
         PR_NUMBER: "1",
+        EVENT_BASE_REF: eventBaseRef,
         EVENT_HEAD_SHA: eventHead,
         FIXTURE_PR: pr,
         GH_TOKEN: "fixture",
@@ -164,9 +165,19 @@ test("builds and bundles the test merge when GitHub's merge keeps an old base", 
 test("checks the tip of the PR's current base branch after a retarget", (t) => {
   const f = fixture(t);
   f.push({ "refs/pull/1/merge": f.merge(f.base, f.head) });
-  const r = f.resolve({ pr: `open\trelease\t${f.head}` });
+  const r = f.resolve({ pr: `open\trelease\t${f.head}`, eventBaseRef: "release" });
   assert.equal(r.status, 0, r.log);
   assert.deepEqual(parentsOf(r.outputs), { base: f.oldBase, head: f.head });
+});
+
+test("fails a re-run of an event for the base the PR targeted before a retarget", (t) => {
+  // The check name comes from the event's base ref; a pass must not be for another base.
+  const f = fixture(t);
+  f.push({ "refs/pull/1/merge": f.merge(f.oldBase, f.head) });
+  const r = f.resolve({ pr: `open\trelease\t${f.head}`, eventBaseRef: "main" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.log, /This event is for base main, but the PR now targets release/);
+  assert.equal(r.outputs, null);
 });
 
 test("retries a failed PR read and fails when the last attempt cannot read the PR", (t) => {

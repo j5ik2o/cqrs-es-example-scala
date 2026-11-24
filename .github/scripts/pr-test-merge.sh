@@ -5,15 +5,15 @@
 # both are checked against the current PR. When GitHub's merge stays old, this
 # builds the merge locally and bundles it for the product jobs.
 #
-# Run inside a full clone. Inputs (environment): PR_NUMBER, EVENT_HEAD_SHA,
-# GH_TOKEN, GITHUB_API_URL, GITHUB_REPOSITORY, GITHUB_OUTPUT, RUNNER_TEMP.
+# Run inside a full clone. Inputs (environment): PR_NUMBER, EVENT_BASE_REF,
+# EVENT_HEAD_SHA, GH_TOKEN, GITHUB_API_URL, GITHUB_REPOSITORY, GITHUB_OUTPUT, RUNNER_TEMP.
 # Outputs: sha, checkout_ref, test_merge ("sha base head"), bundle_name.
 set -euo pipefail
 
 attempts=${PR_TEST_MERGE_ATTEMPTS:-6}
 sha40='^[0-9a-f]{40}$'
-if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ || ! "$EVENT_HEAD_SHA" =~ $sha40 ]]; then
-  echo '::error::Missing or invalid PR number or head SHA in the event'
+if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ || -z "$EVENT_BASE_REF" || ! "$EVENT_HEAD_SHA" =~ $sha40 ]]; then
+  echo '::error::Missing or invalid PR number, base ref, or head SHA in the event'
   exit 1
 fi
 
@@ -33,6 +33,12 @@ for (( attempt = 1; attempt <= attempts; attempt++ )); do
   if [[ "$state" != open || "$head_sha" != "$EVENT_HEAD_SHA" ]]; then
     printf '::error::This event is for head %s, but the PR is %s with head %s\n' \
       "$EVENT_HEAD_SHA" "$state" "$head_sha"
+    exit 1
+  fi
+  # The check name follows the event's base ref, so a re-run of an event from
+  # before a retarget must not report on a merge into another base.
+  if [[ "$base_ref" != "$EVENT_BASE_REF" ]]; then
+    printf '::error::This event is for base %s, but the PR now targets %s\n' "$EVENT_BASE_REF" "$base_ref"
     exit 1
   fi
   # The API's base SHA can lag a push to the base branch; read the tip itself.
