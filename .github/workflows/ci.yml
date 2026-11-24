@@ -16,44 +16,40 @@ jobs:
     name: Verify PR test merge
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
-      sha: ${{ steps.merge.outputs.sha }}
+      ref: ${{ steps.resolve.outputs.checkout_ref }}
+      test_merge: ${{ steps.resolve.outputs.test_merge }}
+      bundle: ${{ steps.resolve.outputs.bundle_name }}
     steps:
-      - name: Resolve a test merge with the event's base and head
-        id: merge
+      # Load the resolver from the revision that defines this workflow; a PR
+      # branch that predates it does not have the script.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test the test merge resolution
+        run: node --test .github/scripts/pr-test-merge.test.mjs
+      # Check the current base tip and PR head, not the event's base SHA.
+      - name: Resolve the PR's test merge
+        id: resolve
         env:
-          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          sha_pattern='^[0-9a-f]{40}$'
-          if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ || ! "$BASE_SHA" =~ $sha_pattern || ! "$HEAD_SHA" =~ $sha_pattern ]]; then
-            echo "::error::The pull request event is missing a valid number, base SHA, or head SHA."
-            exit 1
-          fi
-
-          echo "Event merge: $GITHUB_SHA; expected parents: $BASE_SHA $HEAD_SHA"
-          candidate="$GITHUB_SHA"
-          # After a base edit the event SHA and merge ref can still be stale.
-          for delay in 0 2 4 8 15 30; do
-            if (( delay > 0 )); then
-              sleep "$delay"
-              candidate=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/pull/$PR_NUMBER/merge" --jq '.object.sha') || continue
-            fi
-            [[ "$candidate" =~ $sha_pattern ]] || continue
-            parents=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$candidate" --jq '[.parents[].sha] | join(" ")') || continue
-            echo "Candidate: $candidate; parents: $parents"
-            if [[ "$parents" == "$BASE_SHA $HEAD_SHA" ]]; then
-              echo "Verified test merge: $candidate"
-              echo "sha=$candidate" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
-
-          echo "::error::No test merge matched the pull request event's base and head."
-          exit 1
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/pr-test-merge.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ steps.resolve.outputs.bundle_name != '' }}
+        with:
+          name: ${{ steps.resolve.outputs.bundle_name }}
+          path: ${{ runner.temp }}/pr-test-merge.bundle
+          if-no-files-found: error
+          # After expiry, re-run all jobs so this job builds the bundle again.
+          retention-days: 1
 
   lint:
     name: lint
@@ -61,16 +57,37 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - &require-revision
-        name: Require a verified PR revision
-        if: ${{ github.event_name == 'pull_request' && (needs.revision.result != 'success' || needs.revision.outputs.sha == '') }}
-        run: |
-          echo "::error::No verified PR test merge is available."
-          exit 1
       - &checkout-revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.revision.outputs.sha }}
+          ref: ${{ needs.revision.outputs.ref }}
+          # The bundle of a locally built test merge needs the base history.
+          fetch-depth: ${{ needs.revision.outputs.bundle != '' && '0' || '1' }}
+      - &download-test-merge
+        uses: actions/download-artifact@v4
+        if: ${{ needs.revision.outputs.bundle != '' }}
+        with:
+          name: ${{ needs.revision.outputs.bundle }}
+          path: ${{ runner.temp }}/pr-test-merge
+      - &verify-test-merge
+        name: Verify the checked out test merge
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          TEST_MERGE: ${{ needs.revision.outputs.test_merge }}
+          BUNDLE: ${{ needs.revision.outputs.bundle }}
+        run: |
+          if [[ -n "$BUNDLE" ]]; then
+            git fetch --quiet --no-tags "$RUNNER_TEMP/pr-test-merge/pr-test-merge.bundle" refs/pr-ci/merge
+            git checkout --quiet --detach FETCH_HEAD
+          fi
+          # A shallow checkout hides parents from %P; the commit object keeps them.
+          actual="$(git rev-parse HEAD)$(git cat-file commit HEAD | awk '!NF { exit } $1 == "parent" { printf " %s", $2 }')"
+          printf 'Checked out test merge (SHA, base, head): %s\n' "$actual"
+          if [[ -z "$TEST_MERGE" || "$actual" != "$TEST_MERGE" ]]; then
+            printf '::error::Expected test merge %s\n' "${TEST_MERGE:-missing}"
+            exit 1
+          fi
       - uses: coursier/setup-action@v1
         with:
           jvm: temurin:17
@@ -84,8 +101,9 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - *require-revision
       - *checkout-revision
+      - *download-test-merge
+      - *verify-test-merge
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -119,8 +137,9 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - *require-revision
       - *checkout-revision
+      - *download-test-merge
+      - *verify-test-merge
       - uses: coursier/setup-action@v1
         with:
           jvm: temurin:17
@@ -135,8 +154,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - *require-revision
       - *checkout-revision
+      - *download-test-merge
+      - *verify-test-merge
       - name: Run docker compose e2e against LocalStack
         run: ./tools/scripts/docker-compose-e2e-test.sh
 
@@ -146,8 +166,9 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - *require-revision
       - *checkout-revision
+      - *download-test-merge
+      - *verify-test-merge
       - uses: actions/setup-node@v4
         with:
           node-version: 24
